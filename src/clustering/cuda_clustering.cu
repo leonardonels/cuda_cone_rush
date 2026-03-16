@@ -28,23 +28,30 @@
 //  global output.  We use __int_as_float / __float_as_int trick for
 //  atomics on floats.
 // ==========================================================================
-__device__ inline void atomicMinFloat(float* addr, float val) {
-    int* addr_as_int = (int*)addr;
-    int old = *addr_as_int, assumed;
+__device__ inline void atomicMinFloat(float* addr, float val)
+{
+    int* addr_as_int = reinterpret_cast<int*>(addr);
+    int val_as_int   = __float_as_int(val);
+    int old          = *addr_as_int, assumed;
+
     do {
         assumed = old;
-        old = atomicCAS(addr_as_int, assumed,
-                        __float_as_int(fminf(val, __int_as_float(assumed))));
+        float current = __int_as_float(assumed);
+        float newval  = fminf(val, current);
+        old = atomicCAS(addr_as_int, assumed, __float_as_int(newval));
     } while (assumed != old);
 }
 
-__device__ inline void atomicMaxFloat(float* addr, float val) {
-    int* addr_as_int = (int*)addr;
-    int old = *addr_as_int, assumed;
+__device__ inline void atomicMaxFloat(float* addr, float val)
+{
+    int* addr_as_int = reinterpret_cast<int*>(addr);
+    int old          = *addr_as_int, assumed;
+
     do {
         assumed = old;
-        old = atomicCAS(addr_as_int, assumed,
-                        __float_as_int(fmaxf(val, __int_as_float(assumed))));
+        float current = __int_as_float(assumed);
+        float newval  = fmaxf(val, current);
+        old = atomicCAS(addr_as_int, assumed, __float_as_int(newval));
     } while (assumed != old);
 }
 

@@ -49,7 +49,7 @@ These options are available in `CMakeLists.txt`:
 | Option | Default | Description |
 |---|---|---|
 | `ENABLE_VERBOSE` | `OFF` | Prints processing timings to stdout |
-| `LOGGER_PUB` | `ON` | Publishes average processing time to `/logger/clustering/time` |
+| `LOGGER_PUB` | `OFF` | Publishes average processing time to `/logger/clustering/time` |
 | `USE_CUDA_POINTCLOUD_CONVERTER` | `ON` | Uses CUDA converter instead of CPU converter |
 | `USE_PINNED_MEMORY` | `ON` on x86, `OFF` otherwise | Enables pinned host memory for host/device transfers |
 

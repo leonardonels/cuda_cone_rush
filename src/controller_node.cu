@@ -313,7 +313,6 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
         #endif
         #ifdef ENABLE_VERBOSE
             std::cout << "Total processing time for this callback: " << time_span.count() << " ms\n" << std::endl;
-    
             if (time_span.count() > this->limitWarning_ms) {
                 std::cout << "----------------------------------------------------------------------------\n"
                           << "Warning: Processing time exceeded " << this->limitWarning_ms << " ms! Actual time: " << time_span.count() << " ms\n" 

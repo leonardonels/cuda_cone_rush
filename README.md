@@ -9,6 +9,12 @@ The processing pipeline stays on CUDA buffers across stages:
 PointCloud2 -> optional XYZ filter -> optional ground segmentation -> optional voxel clustering -> cone markers
 ```
 
+## Tested on
+| Lidar Points | Board | avg exec (ms) |
+| --- | --- | --- |
+| 128K | Orin Nano Super | 10ms |
+| 128K | Orin Dev 2048 cuda | ??ms |
+
 ## What Is Included
 
 - CUDA passthrough filtering (`cuda_filtering`)

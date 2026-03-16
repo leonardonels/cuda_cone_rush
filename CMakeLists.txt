@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(cuda_cone_rush LANGUAGES CXX C CUDA)
 
 option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
-option(LOGGER_PUB "Publish timing information to a ROS topic" ON)
+option(LOGGER_PUB "Publish timing information to a ROS topic" OFF)
 option(USE_CUDA_POINTCLOUD_CONVERTER "Build pointcloud_converter from CUDA implementation" ON)
 
 add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-diag-suppress=20012,20015>")

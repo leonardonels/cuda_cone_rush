@@ -13,7 +13,7 @@ PointCloud2 -> optional XYZ filter -> optional ground segmentation -> optional v
 | Lidar Points | Board | avg exec (ms) |
 | --- | --- | --- |
 | 128K | Orin Nano Super | 10ms |
-| 128K | Orin Dev 2048 cuda | ??ms |
+| 128K | Orin Dev 2048 cuda | 5ms |
 
 ## What Is Included
 

@@ -24,9 +24,11 @@
 // ==========================================================================
 //  KERNEL 1:  Bounding box reduction (GPU — no D→H copy needed)
 // ==========================================================================
-//  each block reduces its chunk to local min/max, then atomicMin/Max on
-//  global output.  We use __int_as_float / __float_as_int trick for
-//  atomics on floats.
+//  each block reduces its chunk to local min/max via shared memory, then
+//  commits the block result to global output using atomicMinFloat/MaxFloat.
+//
+//  atomicMinFloat/MaxFloat perform the min/max comparison in float space
+//  (via fminf/fmaxf) before storing the result as integer bits via CAS.
 // ==========================================================================
 __device__ inline void atomicMinFloat(float* addr, float val)
 {

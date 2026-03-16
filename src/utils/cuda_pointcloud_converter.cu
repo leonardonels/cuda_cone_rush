@@ -20,9 +20,7 @@ __global__ void convertPointCloud2Kernel(
     std::uint32_t width,
     std::uint32_t height,
     std::uint32_t row_step,
-    std::uint32_t point_step,
-    std::uint32_t intensity_offset,
-    std::uint32_t out_stride)
+    std::uint32_t point_step)
 {
     const std::uint32_t c = blockIdx.x * blockDim.x + threadIdx.x;
     const std::uint32_t r = blockIdx.y * blockDim.y + threadIdx.y;
@@ -34,24 +32,17 @@ __global__ void convertPointCloud2Kernel(
         + static_cast<std::size_t>(c) * point_step;
 
     const std::uint64_t out_idx =
-        static_cast<std::uint64_t>(r * width + c) * out_stride;
+        static_cast<std::uint64_t>(r * width + c) * 4;  // stride 4 always
 
-    // use memcpy for unaligned reads — point_step=26 means src may not be 4-byte aligned
-    float x, y, z, intensity;
-    memcpy(&x,         src + 0,                sizeof(float));
-    memcpy(&y,         src + 4,                sizeof(float));
-    memcpy(&z,         src + 8,                sizeof(float));
-    memcpy(&intensity, src + intensity_offset, sizeof(float));
+    float x, y, z;
+    memcpy(&x, src + 0, sizeof(float));
+    memcpy(&y, src + 4, sizeof(float));
+    memcpy(&z, src + 8, sizeof(float));
 
     output_data[out_idx + 0] = x;
     output_data[out_idx + 1] = y;
     output_data[out_idx + 2] = z;
-    output_data[out_idx + 3] = intensity;
-    // PointXYZI has 4 padding floats after intensity due to sizeof=32
-    output_data[out_idx + 4] = 0.0f;
-    output_data[out_idx + 5] = 0.0f;
-    output_data[out_idx + 6] = 0.0f;
-    output_data[out_idx + 7] = 0.0f;
+    output_data[out_idx + 3] = 0.0f;
 }
 
 } // namespace
@@ -88,26 +79,19 @@ void convertPointCloud2ToFloatArray(
     const std::uint32_t height     = sub_cloud->height;
     const std::uint32_t row_step   = sub_cloud->row_step;
     const std::uint32_t point_step = sub_cloud->point_step;
-    const std::uint32_t xyz_size   = static_cast<std::uint32_t>(sizeof(pcl::PointXYZI));
-    const std::uint32_t out_stride = xyz_size / sizeof(float);
 
     if (width == 0 || height == 0) return;
 
-    std::uint32_t intensity_offset = 12;
-    for (const auto& field : sub_cloud->fields)
-        if (field.name == "intensity") { intensity_offset = field.offset; break; }
-
     const std::size_t in_bytes   = sub_cloud->data.size();
-    const std::size_t out_floats =
-        static_cast<std::size_t>(width) * height * xyz_size / sizeof(float);
+    const std::size_t out_floats = static_cast<std::size_t>(width) * height * 4;
 
     res.reserve(in_bytes);
 
     if (d_out.size() < out_floats)
         d_out.resize(out_floats);
 
-        cudaMemcpyAsync(res.d_input, sub_cloud->data.data(),
-                        in_bytes, cudaMemcpyHostToDevice, res.stream);
+    cudaMemcpyAsync(res.d_input, sub_cloud->data.data(),
+                    in_bytes, cudaMemcpyHostToDevice, res.stream);
 
     const dim3 threads(16, 16);
     const dim3 blocks((width + 15) / 16, (height + 15) / 16);
@@ -116,9 +100,7 @@ void convertPointCloud2ToFloatArray(
         res.d_input,
         thrust::raw_pointer_cast(d_out.data()),
         width, height,
-        row_step, point_step,
-        intensity_offset,
-        out_stride);
+        row_step, point_step);
 
     cudaStreamSynchronize(res.stream);
 }

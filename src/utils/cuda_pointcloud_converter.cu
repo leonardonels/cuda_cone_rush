@@ -2,9 +2,7 @@
 
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>
-
 #include <pcl/point_types.h>
-
 #include <stdexcept>
 #include <string>
 

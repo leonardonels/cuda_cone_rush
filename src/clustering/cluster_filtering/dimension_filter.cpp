@@ -1,4 +1,4 @@
-#include "cuda_clustering/clustering/cluster_filtering/dimension_filter.hpp"
+#include "cuda_cone_rush/clustering/cluster_filtering/dimension_filter.hpp"
 DimensionFilter::DimensionFilter(cluster_filter& param){
     clusterMaxX = param.clusterMaxX;
     clusterMaxY = param.clusterMaxY;

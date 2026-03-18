@@ -1,4 +1,4 @@
-#include "cuda_clustering/utils/cuda_pointcloud_converter.hpp"
+#include "cuda_cone_rush/utils/cuda_pointcloud_converter.hpp"
 
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>

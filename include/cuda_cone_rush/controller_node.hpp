@@ -1,17 +1,17 @@
 #pragma once
 #include <string.h>
 
-#include "cuda_clustering/clustering/cuda_clustering.hpp"
-#include "cuda_clustering/filtering/cuda_filtering.hpp"
-#include "cuda_clustering/clustering/iclustering.hpp"
-#include "cuda_clustering/filtering/ifiltering.hpp"
-#include "cuda_clustering/segmentation/cuda_segmentation.hpp"
-#include "cuda_clustering/segmentation/isegmentation.hpp"
+#include "cuda_cone_rush/clustering/cuda_clustering.hpp"
+#include "cuda_cone_rush/filtering/cuda_filtering.hpp"
+#include "cuda_cone_rush/clustering/iclustering.hpp"
+#include "cuda_cone_rush/filtering/ifiltering.hpp"
+#include "cuda_cone_rush/segmentation/cuda_segmentation.hpp"
+#include "cuda_cone_rush/segmentation/isegmentation.hpp"
 
 #ifdef USE_CUDA_POINTCLOUD_CONVERTER
-#include "cuda_clustering/utils/cuda_pointcloud_converter.hpp"
+#include "cuda_cone_rush/utils/cuda_pointcloud_converter.hpp"
 #else
-#include "cuda_clustering/utils/pointcloud_converter.hpp"
+#include "cuda_cone_rush/utils/pointcloud_converter.hpp"
 #endif
 
 #include <cuda_runtime.h>
@@ -30,7 +30,6 @@ using pinned_host_vector = thrust::host_vector<T>;
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
-#include <visualization_msgs/msg/marker_array.hpp>
 #ifdef LOGGER_PUB
 #include <std_msgs/msg/float64.hpp>
 #endif

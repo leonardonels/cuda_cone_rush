@@ -1,4 +1,4 @@
-#include "cuda_clustering/utils/pointcloud_converter.hpp"
+#include "cuda_cone_rush/utils/pointcloud_converter.hpp"
 
 namespace pointcloud_utils
 {

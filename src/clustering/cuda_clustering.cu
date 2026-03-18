@@ -1,5 +1,5 @@
-#include "cuda_clustering/clustering/cuda_clustering.hpp"
-#include "cuda_clustering/utils/cached_allocator.hpp"
+#include "cuda_cone_rush/clustering/cuda_clustering.hpp"
+#include "cuda_cone_rush/utils/cached_allocator.hpp"
 
 #include <iostream>
 #include <algorithm>

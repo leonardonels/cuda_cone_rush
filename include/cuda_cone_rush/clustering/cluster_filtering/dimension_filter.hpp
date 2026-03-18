@@ -1,5 +1,5 @@
 #pragma once
-#include "cuda_clustering/clustering/cluster_filtering/icluster_filtering.hpp"
+#include "cuda_cone_rush/clustering/cluster_filtering/icluster_filtering.hpp"
 
 class DimensionFilter : public IClusterFiltering
 {

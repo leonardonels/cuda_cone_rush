@@ -144,7 +144,7 @@ src/
     utils/cuda_pointcloud_converter.cu
     utils/pointcloud_converter.cpp
 
-include/cuda_clustering/
+include/cuda_cone_rush/
     controller_node.hpp
     filtering/
     segmentation/

@@ -49,6 +49,8 @@
     publishCluster: true
 
     limitWarning_ms: 30
+
+    nsight_max_iterations: 200000
     
     
 

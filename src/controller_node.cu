@@ -104,7 +104,15 @@ void ControllerNode::loadParameters()
     declare_parameter("probability", 0.75);
     declare_parameter("clustering", true);
     declare_parameter("publishCluster", true);
+
+    #ifdef ENABLE_VERBOSE
     declare_parameter("limitWarning_ms", 30);
+    #endif
+
+    #ifdef NSIGHT_SDK
+    declare_parameter("nsight_max_iterations", 60);
+    #endif
+    
 
     get_parameter("input_topic", this->input_topic);
     get_parameter("segmented_topic", this->segmented_topic);
@@ -143,7 +151,14 @@ void ControllerNode::loadParameters()
     get_parameter("probability", this->segP.probability);
     get_parameter("clustering", this->clusteringFlag);
     get_parameter("publishCluster", this->publishCluster);
+
+    #ifdef ENABLE_VERBOSE
     get_parameter("limitWarning_ms", this->limitWarning_ms);
+    #endif
+
+    #ifdef NSIGHT_SDK
+    get_parameter("nsight_max_iterations", this->nsight_max_iterations);
+    #endif
 }
 
 void ControllerNode::getInfo()
@@ -337,6 +352,20 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
                 logger_pub->publish(time_msg);
                 processing_time_ms = 0.0;  // reset for next batch
                 count = 0;
+            }
+        #endif
+
+        #ifdef NSIGHT_SDK
+            nsight_iterations++;
+            if (nsight_iterations >= nsight_max_iterations) {
+                // Trigger a breakpoint for Nsight Systems after the specified number of iterations
+                #if defined(__x86_64__) || defined(__i386__)
+                    asm("int $2");
+                #elif defined(__aarch64__)
+                    asm("brk #0");
+                #else
+                _   _builtin_trap();
+                #endif
             }
         #endif
     }

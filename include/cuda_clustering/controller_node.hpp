@@ -47,7 +47,15 @@ private:
         float downFilterLimitZ, upFilterLimitZ;
         clustering_parameters param;
         segParam_t segP;
+
+        #ifdef ENABLE_VERBOSE
         int limitWarning_ms;
+        #endif
+
+        #ifdef NSIGHT_SDK
+        int nsight_max_iterations;
+        int nsight_iterations = 0;
+        #endif
 
         double totalTime = 0.0;
         unsigned int iterations = 0;

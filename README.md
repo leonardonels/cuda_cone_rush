@@ -50,14 +50,15 @@ These options are available in `CMakeLists.txt`:
 | Option | Default | Description |
 |---|---|---|
 | `ENABLE_VERBOSE` | `OFF` | Prints processing timings to stdout |
-| `LOGGER_PUB` | `OFF` | Publishes average processing time to `/logger/clustering/time` |
+| `LATENCY_TESTING` | `OFF` | Print latency information for each BARQ callback |
 | `USE_CUDA_POINTCLOUD_CONVERTER` | `ON` | Uses CUDA converter instead of CPU converter |
 | `USE_PINNED_MEMORY` | `ON` on x86, `OFF` otherwise | Enables pinned host memory for host/device transfers |
+| `NSIGHT_SDK` | `OFF` | Set an execution limit for NVIDIA Nsight Systems profiling |
 
 Example:
 
 ```bash
-colcon build --packages-select cuda_cone_rush --cmake-args -DENABLE_VERBOSE=ON -DLOGGER_PUB=ON
+colcon build --packages-select cuda_cone_rush --cmake-args -DENABLE_VERBOSE=ON -LATENCY_TESTING=ON
 ```
 
 ## Run
@@ -144,7 +145,7 @@ src/
     utils/cuda_pointcloud_converter.cu
     utils/pointcloud_converter.cpp
 
-include/cuda_clustering/
+include/cuda_cone_rush/
     controller_node.hpp
     filtering/
     segmentation/

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "isegmentation.hpp"
-#include "cuda_clustering/utils/cached_allocator.hpp"
+#include "cuda_cone_rush/utils/cached_allocator.hpp"
 
 #include <cuda_runtime.h>
 #include <thrust/device_vector.h>

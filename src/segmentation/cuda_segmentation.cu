@@ -1,4 +1,4 @@
-#include "cuda_clustering/segmentation/cuda_segmentation.hpp"
+#include "cuda_cone_rush/segmentation/cuda_segmentation.hpp"
 
 #include <iostream>
 #include <chrono>

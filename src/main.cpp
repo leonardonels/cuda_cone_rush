@@ -1,4 +1,4 @@
-#include "cuda_clustering/controller_node.hpp"
+#include "cuda_cone_rush/controller_node.hpp"
 #include <unistd.h>
 
 void handleSignal(int signal) {

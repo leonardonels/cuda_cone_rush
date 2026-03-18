@@ -1,4 +1,4 @@
-#include "cuda_clustering/filtering/cuda_filtering.hpp"
+#include "cuda_cone_rush/filtering/cuda_filtering.hpp"
 
 // --------------------------------------------------------------------------
 // Custom passthrough filter kernel — replaces libcudafilter.so dependency

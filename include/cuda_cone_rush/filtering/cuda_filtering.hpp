@@ -1,5 +1,5 @@
 #pragma once 
-#include "cuda_clustering/filtering/ifiltering.hpp"
+#include "cuda_cone_rush/filtering/ifiltering.hpp"
 #include <ostream>
 #include <iostream>
 #include <chrono>

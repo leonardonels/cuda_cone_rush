@@ -14,6 +14,7 @@ PointCloud2 -> optional XYZ filter -> optional ground segmentation -> optional v
 | --- | --- | --- |
 | 128K | Orin Nano Super | 10ms |
 | 128K | Orin Dev 2048 cuda | 5ms |
+| 128K | RTX 4060 Mobile 3072 cuda | 1.1ms |
 
 ## What Is Included
 

@@ -19,6 +19,8 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include "sahm/sahm.hpp"
+
 #ifdef USE_PINNED_MEMORY
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
 template <typename T>
@@ -93,6 +95,14 @@ private:
 
         /* Publish PointCloud */
         void publishPc(float *points, unsigned int size, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub);
+
+        void onTimer();
+
+        void processPointCloud(const uint8_t* points, uint32_t width, uint32_t point_step, double timestamp);
+
+        rclcpp::TimerBase::SharedPtr timer_;
+        std::unique_ptr<SAHM::DirectReader> reader_;
+        size_t sahm_max_size_ = 0;
 
 public:
         ControllerNode();

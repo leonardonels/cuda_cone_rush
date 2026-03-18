@@ -25,25 +25,25 @@
     maxHeight: 0.4          # of the lowest point
 
     #filter
-    downFilterLimitX: -25.0
-    upFilterLimitX: 25.0
-    downFilterLimitY: -25.0
-    upFilterLimitY: 25.0
-    downFilterLimitZ: -5.0
-    upFilterLimitZ: 5.0
+    downFilterLimitX: -125.0
+    upFilterLimitX: 125.0
+    downFilterLimitY: -125.0
+    upFilterLimitY: 125.0
+    downFilterLimitZ: -15.0
+    upFilterLimitZ: 15.0
 
     #segmentation
-    distanceThreshold: 0.1            # from the plane
-    maxSegmentationDistance: 20.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
-    maxIterations: 80                 # by requiring the plane to be found form 3 points close to the car the max number of iterations can be reduce to 1/3
+    distanceThreshold: 0.15            # from the plane
+    maxSegmentationDistance: 200.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
+    maxIterations: 166                 # by requiring the plane to be found form 3 points close to the car the max number of iterations can be reduce to 1/3
     probability: 0.75
 
     #options
     filter: true
-    publishFilteredPc: false
+    publishFilteredPc: true
     
     segment: true
-    publishSegmentedPc: false
+    publishSegmentedPc: true
     
     clustering: true
     publishCluster: true

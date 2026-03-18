@@ -100,6 +100,9 @@ add_library(cuda_clustering src/clustering/cuda_clustering.cu)
 add_library(cluster_filtering src/clustering/cluster_filtering/dimension_filter.cpp)
 add_library(cuda_filtering src/filtering/cuda_filtering.cu)
 add_library(cuda_segmentation src/segmentation/cuda_segmentation.cu)
+add_library(sahm_lib src/sahm/sahm.cpp)
+
+target_include_directories(sahm_lib PUBLIC include)
 
 # Optimized pointcloud converter library
 add_library(pointcloud_converter ${POINTCLOUD_CONVERTER_SOURCE})
@@ -136,6 +139,7 @@ target_link_libraries(${PROJECT_NAME}
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
+  sahm_lib
 )
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp

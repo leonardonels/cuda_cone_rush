@@ -19,7 +19,7 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
-#include "sahm/sahm.hpp"
+#include "barq/barq.hpp"
 
 #ifdef USE_PINNED_MEMORY
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
@@ -48,10 +48,18 @@ private:
         float downFilterLimitZ, upFilterLimitZ;
         clustering_parameters param;
         segParam_t segP;
-        int limitWarning_ms;
 
-        double totalTime = 0.0;
-        unsigned int iterations = 0;
+        #ifdef ENABLE_VERBOSE
+        int limitWarning_ms;
+        #endif
+
+        // BARQ
+        rclcpp::TimerBase::SharedPtr timer_;
+        std::unique_ptr<BARQ::Reader> reader_;
+        size_t barq_max_size_ = 0;
+        size_t barq_retry_delay_ms_ = 100;
+        int barq_max_retries_ = 5;
+        int barq_retries_ = 0;
 
         // ---------------------------------------------------------------------------
         // using pinned host memory instead of heap-allocated memory
@@ -79,30 +87,24 @@ private:
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr cones_array_pub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cp_pub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr segmented_cp_pub;
-        
-        /* Logger publisher */
-        #ifdef LOGGER_PUB
-        float processing_time_ms = 0.0;
-        uint64_t count = 0;
-        rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr logger_pub;
-        #endif
 
         /* Load parameters function */
         void loadParameters();
 
-        /* PointCloud Callback */
+        /* Reserve and resize memory before processing */
+        void reserveAndResize(size_t inputSize);
+
+        /* PointCloud Callback - ROS2 entry point */
         void scanCallback(const sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud);
+
+        /* Timer callback - BARQ entry point */
+        void onTimer();
+
+        /* where the magic happens */
+        void runPipeline(unsigned int inputSize);
 
         /* Publish PointCloud */
         void publishPc(float *points, unsigned int size, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub);
-
-        void onTimer();
-
-        void processPointCloud(const uint8_t* points, uint32_t width, uint32_t point_step, double timestamp);
-
-        rclcpp::TimerBase::SharedPtr timer_;
-        std::unique_ptr<SAHM::DirectReader> reader_;
-        size_t sahm_max_size_ = 0;
 
 public:
         ControllerNode();

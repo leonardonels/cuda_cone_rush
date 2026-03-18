@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.8)
 project(cuda_cone_rush LANGUAGES CXX C CUDA)
 
-option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
-option(LOGGER_PUB "Publish timing information to a ROS topic" OFF)
-option(USE_CUDA_POINTCLOUD_CONVERTER "Build pointcloud_converter from CUDA implementation" ON)
-
 add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:-diag-suppress=20012,20015>")
 add_compile_options("$<$<COMPILE_LANGUAGE:CUDA>:--extended-lambda>")
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
+
+option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
+option(LATENCY_TESTING "Print latency information for each BARQ callback" OFF)
+option(USE_CUDA_POINTCLOUD_CONVERTER "Build pointcloud_converter from CUDA implementation" ON)
 
 # Pinned memory: auto-detect architecture and set the default accordingly.
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|amd64|AMD64")
@@ -33,11 +33,11 @@ else()
   message(STATUS "Verbose timing information: DISABLED")
 endif()
 
-if(LOGGER_PUB)
-  message(STATUS "ROS logger publisher: ENABLED")
-  add_definitions(-DLOGGER_PUB)
+if(LATENCY_TESTING)
+  message(STATUS "Latency testing: ENABLED")
+  add_definitions(-DLATENCY_TESTING)
 else()
-  message(STATUS "ROS logger publisher: DISABLED")
+  message(STATUS "Latency testing: DISABLED")
 endif()
 
 if(USE_CUDA_POINTCLOUD_CONVERTER)
@@ -100,9 +100,9 @@ add_library(cuda_clustering src/clustering/cuda_clustering.cu)
 add_library(cluster_filtering src/clustering/cluster_filtering/dimension_filter.cpp)
 add_library(cuda_filtering src/filtering/cuda_filtering.cu)
 add_library(cuda_segmentation src/segmentation/cuda_segmentation.cu)
-add_library(sahm_lib src/sahm/sahm.cpp)
+add_library(barq_lib src/barq/barq.cpp)
 
-target_include_directories(sahm_lib PUBLIC include)
+target_include_directories(barq_lib PUBLIC include)
 
 # Optimized pointcloud converter library
 add_library(pointcloud_converter ${POINTCLOUD_CONVERTER_SOURCE})
@@ -139,7 +139,7 @@ target_link_libraries(${PROJECT_NAME}
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
-  sahm_lib
+  barq_lib
 )
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp

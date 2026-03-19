@@ -19,26 +19,7 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
     /* Select clustering class */
     this->clustering = new CudaClustering(param);
 
-    /* Define BARQ transport layer */
-    const size_t kMaxPoints = 300000;
-    const size_t kPointStep = sizeof(float) * 4 + sizeof(uint16_t) + sizeof(double);
-    const size_t kHeaderBytes = sizeof(uint32_t) * 3 + sizeof(double);
-    barq_max_size_ = kMaxPoints * kPointStep + kHeaderBytes + 512;
-    
-    do{
-        this->reader_ = std::make_unique<BARQ::Reader>("/hesai_pointcloud", this->barq_max_size_);
-        if (!reader_->init()) {
-            RCLCPP_WARN(rclcpp::get_logger("cuda_cone_rush_node"), "Failed to initialize BARQ reader, retrying in %zu ms...", this->barq_retry_delay_ms_);
-            std::this_thread::sleep_for(std::chrono::milliseconds(this->barq_retry_delay_ms_));
-            this->barq_retries_++;
-        } else {
-            RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ reader initialized successfully.");
-
-            // Poll BARQ at 1KHz
-            this->timer_ = create_wall_timer(std::chrono::milliseconds(1), std::bind(&ControllerNode::onTimer, this));
-            break;
-        }
-    } while (this->barq_retries_ < this->barq_max_retries_);
+    if (this->barq_enabled_) this->BARQ_reader_init();
 
     /* Define QoS for Best Effort messages transport */
     auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
@@ -85,6 +66,36 @@ ControllerNode::~ControllerNode()
     if (compute_stream) cudaStreamDestroy(compute_stream);
 }
 
+void ControllerNode::BARQ_reader_init()
+{
+    RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Initializing BARQ reader...");
+    
+    /* Define BARQ transport layer */
+    const size_t kMaxPoints = 300000;
+    const size_t kPointStep = sizeof(float) * 4 + sizeof(uint16_t) + sizeof(double);
+    const size_t kHeaderBytes = sizeof(uint32_t) * 3 + sizeof(double);
+    barq_max_size_ = kMaxPoints * kPointStep + kHeaderBytes + 512;
+    
+    do{
+        this->reader_ = std::make_unique<BARQ::Reader>("/hesai_pointcloud", this->barq_max_size_);
+        if (!reader_->init()) {
+            RCLCPP_WARN(rclcpp::get_logger("cuda_cone_rush_node"), "Failed to initialize BARQ reader, retrying in %zu ms...", this->barq_retry_delay_ms_);
+            std::this_thread::sleep_for(std::chrono::milliseconds(this->barq_retry_delay_ms_));
+            this->barq_retries_++;
+        } else {
+            RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ reader initialized successfully.");
+
+            // Poll BARQ at 60Hz
+            this->timer_ = create_wall_timer(std::chrono::milliseconds(this->barq_polling_rate_ms_), std::bind(&ControllerNode::onTimer, this));
+            break;
+        }
+    } while (this->barq_retries_ < this->barq_max_retries_);
+    if (this->barq_retries_ >= this->barq_max_retries_) {
+        RCLCPP_ERROR(rclcpp::get_logger("cuda_cone_rush_node"), "Exceeded maximum BARQ initialization retries (%d), exiting.", this->barq_max_retries_);
+        // std::raise(SIGINT);  // Gracefully shutdown the node
+    }
+}
+
 void ControllerNode::loadParameters()
 {
     declare_parameter("input_topic", "/lidar_points");
@@ -114,8 +125,10 @@ void ControllerNode::loadParameters()
     declare_parameter("downFilterLimitZ", 0.0);
     declare_parameter("upFilterLimitZ", 0.0);
 
+    declare_parameter("BARQ_enabled", false);
     declare_parameter("BARQ_retry_delay_ms", 10);
     declare_parameter("BARQ_max_retries", 5);
+    declare_parameter("BARQ_polling_rate_ms", 16);  // 16 ms corresponds to ~60Hz
     declare_parameter("filter", false);
     declare_parameter("segment", false);
     declare_parameter("publishFilteredPc", false);
@@ -160,9 +173,11 @@ void ControllerNode::loadParameters()
     get_parameter("upFilterLimitY", this->upFilterLimitY);
     get_parameter("downFilterLimitZ", this->downFilterLimitZ);
     get_parameter("upFilterLimitZ", this->upFilterLimitZ);
-    
+
+    get_parameter("BARQ_enabled", this->barq_enabled_);
     get_parameter("BARQ_retry_delay_ms", this->barq_retry_delay_ms_);
     get_parameter("BARQ_max_retries", this->barq_max_retries_);
+    get_parameter("BARQ_polling_rate_ms", this->barq_polling_rate_ms_);
     get_parameter("filter", this->filterFlag);
     get_parameter("segment", this->segmentFlag);
     get_parameter("publishFilteredPc", this->publishFilteredPc);
@@ -241,6 +256,13 @@ void ControllerNode::reserveAndResize(size_t totalElements)
 // ROS2 Entry point for PointCloud2 subscriber callback — not used with BARQ
 void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud)
 {
+#ifdef LATENCY_TESTING
+    auto now = rclcpp::Clock(RCL_ROS_TIME).now();
+    auto timestamp = sub_cloud->header.stamp;
+    auto latency = (now - timestamp).nanoseconds() / 1e6;
+    std::cout << "ROS2 latency: " << latency << " ms" << std::endl;
+#endif
+
     unsigned int inputSize = sub_cloud->width * sub_cloud->height;
     size_t totalElements = inputSize * 4;
 
@@ -274,6 +296,7 @@ void ControllerNode::onTimer()
         return;
     }
 
+    // latency depends on polling frequency
 #ifdef LATENCY_TESTING
     const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();

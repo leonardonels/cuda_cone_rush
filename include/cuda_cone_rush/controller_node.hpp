@@ -63,8 +63,10 @@ private:
         std::unique_ptr<BARQ::Reader> reader_;
         size_t barq_max_size_ = 0;
         size_t barq_retry_delay_ms_ = 100;
+        bool barq_enabled_ = false;
         int barq_max_retries_ = 5;
         int barq_retries_ = 0;
+        int barq_polling_rate_ms_ = 16;  // default to ~60Hz
 
         // ---------------------------------------------------------------------------
         // using pinned host memory instead of heap-allocated memory
@@ -95,6 +97,9 @@ private:
 
         /* Load parameters function */
         void loadParameters();
+
+        /* Initialize BARQ reader */
+        void BARQ_reader_init();
 
         /* Reserve and resize memory before processing */
         void reserveAndResize(size_t inputSize);

@@ -1,30 +1,33 @@
 #params from adaprive clustering 
 /cuda_cone_rush_node:
   ros__parameters:
+    # ================ Topics and Frames =================
     input_topic: /lidar_points #/lidar_points #/patchworkpp/nonground
     segmented_topic: /segmented_points
     filtered_topic: /filtered_points
     cluster_topic: /clusters #/perception/newclusters
     frame_id: "hesai_lidar"
 
-    #clustering
-    minClusterSize : 1        # Minimum cluster size to filter out noise
-    maxClusterSize : 500      # Maximum size for large objects
-    voxelX: 0.8               # Down-sampling resolution in X (meters)
-    voxelY: 0.8               # Down-sampling resolution in Y (meters)
-    voxelZ: 0.8               # Down-sampling resolution in Z (meters)
-    countThreshold: 5         # Minimum points per voxel
+    # ================ BARQ options =================
+    BARQ_enabled: true      # false to disable BARQ and use ROS2 as normal
+    BARQ_retry_delay_ms: 100
+    BARQ_max_retries: 50
+    BARQ_polling_rate_ms: 16  # ~60Hz
 
-    #filter for clusters
-    clusterMaxX: 0.4
-    clusterMaxY: 0.4
-    clusterMaxZ: 0.4
-    clusterMinX: -0.1
-    clusterMinY: -0.1
-    clusterMinZ: 0.1
-    maxHeight: 0.4          # of the lowest point
+    # ================ Pipeline options =================
+    filter: true
+    segment: true
+    clustering: true
+    
+    publishFilteredPc: true
+    publishSegmentedPc: true
+    publishCluster: true
 
-    #filter
+    # ================ Debug options =================
+    limitWarning_ms: 30
+    nsight_max_iterations: 20
+    
+    # ================ Filtering XYZ options =================
     downFilterLimitX: -25.0
     upFilterLimitX: 25.0
     downFilterLimitY: -25.0
@@ -32,29 +35,25 @@
     downFilterLimitZ: -5.0
     upFilterLimitZ: 5.0
 
-    #segmentation
+    # ================ Segmentation options =================
     distanceThreshold: 0.1            # from the plane
     maxSegmentationDistance: 200.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
     maxIterations: 80                 # by requiring the plane to be found form 3 points close to the car the max number of iterations can be reduce to 1/3
     probability: 0.75
-
-    #global options
-    BARQ_retry_delay_ms: 100
-    BARQ_max_retries: 50
-
-    filter: true
-    publishFilteredPc: true
     
-    segment: true
-    publishSegmentedPc: true
+    # ================ Clustering options =================
+    minClusterSize : 1        # Minimum cluster size to filter out noise
+    maxClusterSize : 500      # Maximum size for large objects
+    voxelX: 0.8               # Down-sampling resolution in X (meters)
+    voxelY: 0.8               # Down-sampling resolution in Y (meters)
+    voxelZ: 0.8               # Down-sampling resolution in Z (meters)
+    countThreshold: 5         # Minimum points per voxel
     
-    clustering: true
-    publishCluster: true
-
-    #verbose options
-    limitWarning_ms: 30
-
-    nsight_max_iterations: 20
+    clusterMaxX: 0.4
+    clusterMaxY: 0.4
+    clusterMaxZ: 0.4
+    clusterMinX: -0.1
+    clusterMinY: -0.1
+    clusterMinZ: 0.1
+    maxHeight: 0.4          # of the lowest point
     
-    
-

@@ -19,20 +19,23 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
     /* Select clustering class */
     this->clustering = new CudaClustering(param);
 
-    if (this->barq_enabled_) this->BARQ_reader_init();
-
-    /* Define QoS for Best Effort messages transport */
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
+    if (this->barq_enabled_) {
+        /* Create BARQ subscriber */
+        this->BARQ_reader_init();
+    }else{
+        /* Define QoS for Best Effort messages transport */
+        auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
+        
+        /* Create ROS2 subscriber */
+        this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
+                                                                                   std::bind(&ControllerNode::scanCallback, this, std::placeholders::_1));
+    }
 
     this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
     if(this->filterFlag && this->publishFilteredPc)
         this->filtered_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->filtered_topic, 100);
     if(this->segmentFlag && this->publishSegmentedPc)
         this->segmented_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->segmented_topic, 100);
-
-    /* Create subscriber */
-    this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
-                                                                               std::bind(&ControllerNode::scanCallback, this, std::placeholders::_1));
                                                                                
     /* Cones topic init */
     cones->header.frame_id = this->frame_id;
@@ -98,47 +101,29 @@ void ControllerNode::BARQ_reader_init()
 
 void ControllerNode::loadParameters()
 {
+    // ================ Topics and Frames =================
     declare_parameter("input_topic", "/lidar_points");
     declare_parameter("segmented_topic", "/segmented_points");
     declare_parameter("filtered_topic", "/filtered_points");
     declare_parameter("cluster_topic", "/clusters");
-    declare_parameter("frame_id", "map");
-    declare_parameter("minClusterSize", 0);
-    declare_parameter("maxClusterSize", 0);
-    declare_parameter("voxelX", 0.0);
-    declare_parameter("voxelY", 0.0);
-    declare_parameter("voxelZ", 0.0);
-    declare_parameter("countThreshold", 0);
-
-    declare_parameter("clusterMaxX", 0.0);
-    declare_parameter("clusterMaxY", 0.0);
-    declare_parameter("clusterMaxZ", 0.0);
-    declare_parameter("clusterMinX", 0.0);
-    declare_parameter("clusterMinY", 0.0);
-    declare_parameter("clusterMinZ", 0.0);
-    declare_parameter("maxHeight", 0.0);
-
-    declare_parameter("downFilterLimitX", -1e10);
-    declare_parameter("upFilterLimitX", 1e10);
-    declare_parameter("downFilterLimitY", -1e10);
-    declare_parameter("upFilterLimitY", 1e10);
-    declare_parameter("downFilterLimitZ", 0.0);
-    declare_parameter("upFilterLimitZ", 0.0);
-
+    declare_parameter("frame_id", "hesai_lidar");
+    
+    // ================ BARQ options =================
     declare_parameter("BARQ_enabled", false);
     declare_parameter("BARQ_retry_delay_ms", 10);
     declare_parameter("BARQ_max_retries", 5);
-    declare_parameter("BARQ_polling_rate_ms", 16);  // 16 ms corresponds to ~60Hz
+    declare_parameter("BARQ_polling_rate_ms", 1);  // 1 ms corresponds to ~1KHz
+    
+    // ================ Pipeline options =================
     declare_parameter("filter", false);
     declare_parameter("segment", false);
+    declare_parameter("clustering", true);
+    
     declare_parameter("publishFilteredPc", false);
     declare_parameter("publishSegmentedPc", false);
-    declare_parameter("distanceThreshold", 0.1);
-    declare_parameter("maxSegmentationDistance", 20.0);
-    declare_parameter("maxIterations", 166);
-    declare_parameter("probability", 0.75);
-    declare_parameter("clustering", true);
     declare_parameter("publishCluster", true);
+
+    // ================ Debug options =================
 #ifdef ENABLE_VERBOSE
     declare_parameter("limitWarning_ms", 30);
 #endif
@@ -146,12 +131,82 @@ void ControllerNode::loadParameters()
     declare_parameter("nsight_max_iterations", 60);
 #endif
     
+    // ================ Filtering XYZ options =================
+    declare_parameter("downFilterLimitX", -1e10);
+    declare_parameter("upFilterLimitX", 1e10);
+    declare_parameter("downFilterLimitY", -1e10);
+    declare_parameter("upFilterLimitY", 1e10);
+    declare_parameter("downFilterLimitZ", 0.0);
+    declare_parameter("upFilterLimitZ", 0.0);
+    
+    // ================ Segmentation options =================
+    declare_parameter("distanceThreshold", 0.1);
+    declare_parameter("maxSegmentationDistance", 20.0);
+    declare_parameter("maxIterations", 80);
+    declare_parameter("probability", 0.75);
+    
+    // ================ Clustering options =================
+    declare_parameter("minClusterSize", 1);
+    declare_parameter("maxClusterSize", 500);
+    declare_parameter("voxelX", 0.8);
+    declare_parameter("voxelY", 0.8);
+    declare_parameter("voxelZ", 0.8);
+    declare_parameter("countThreshold", 5);
+    
+    declare_parameter("clusterMaxX", 0.4);
+    declare_parameter("clusterMaxY", 0.4);
+    declare_parameter("clusterMaxZ", 0.4);
+    declare_parameter("clusterMinX", -0.1);
+    declare_parameter("clusterMinY", -0.1);
+    declare_parameter("clusterMinZ", 0.1);
+    declare_parameter("maxHeight", 0.4);
+    
 
+    // ================ Topics and Frames =================
     get_parameter("input_topic", this->input_topic);
     get_parameter("segmented_topic", this->segmented_topic);
     get_parameter("filtered_topic", this->filtered_topic);
     get_parameter("cluster_topic", this->cluster_topic);
     get_parameter("frame_id", this->frame_id);
+
+    // ================ BARQ options =================
+    get_parameter("BARQ_enabled", this->barq_enabled_);
+    get_parameter("BARQ_retry_delay_ms", this->barq_retry_delay_ms_);
+    get_parameter("BARQ_max_retries", this->barq_max_retries_);
+    get_parameter("BARQ_polling_rate_ms", this->barq_polling_rate_ms_);
+
+    // ================ Pipeline options =================
+    get_parameter("filter", this->filterFlag);
+    get_parameter("segment", this->segmentFlag);
+    get_parameter("clustering", this->clusteringFlag);
+
+    get_parameter("publishFilteredPc", this->publishFilteredPc);
+    get_parameter("publishSegmentedPc", this->publishSegmentedPc);
+    get_parameter("publishCluster", this->publishCluster);
+
+    // ================ Debug options =================
+#ifdef ENABLE_VERBOSE
+    get_parameter("limitWarning_ms", this->limitWarning_ms);
+#endif
+#ifdef NSIGHT_SDK
+    get_parameter("nsight_max_iterations", this->nsight_max_iterations);
+#endif
+
+    // ================ Filtering XYZ options =================
+    get_parameter("downFilterLimitX", this->downFilterLimitX);
+    get_parameter("upFilterLimitX", this->upFilterLimitX);
+    get_parameter("downFilterLimitY", this->downFilterLimitY);
+    get_parameter("upFilterLimitY", this->upFilterLimitY);
+    get_parameter("downFilterLimitZ", this->downFilterLimitZ);
+    get_parameter("upFilterLimitZ", this->upFilterLimitZ);
+
+    // ================ Segmentation options =================
+    get_parameter("distanceThreshold", this->segP.distanceThreshold);
+    get_parameter("maxSegmentationDistance", this->segP.maxSegmentationDistance);
+    get_parameter("maxIterations", this->segP.maxIterations);
+    get_parameter("probability", this->segP.probability);
+    
+    // ================ Clustering options =================
     get_parameter("minClusterSize", this->param.clustering.minClusterSize);
     get_parameter("maxClusterSize", this->param.clustering.maxClusterSize);
     get_parameter("voxelX", this->param.clustering.voxelX);
@@ -166,34 +221,6 @@ void ControllerNode::loadParameters()
     get_parameter("clusterMinY", this->param.filtering.clusterMinY);
     get_parameter("clusterMinZ", this->param.filtering.clusterMinZ);
     get_parameter("maxHeight", this->param.filtering.maxHeight);
-
-    get_parameter("downFilterLimitX", this->downFilterLimitX);
-    get_parameter("upFilterLimitX", this->upFilterLimitX);
-    get_parameter("downFilterLimitY", this->downFilterLimitY);
-    get_parameter("upFilterLimitY", this->upFilterLimitY);
-    get_parameter("downFilterLimitZ", this->downFilterLimitZ);
-    get_parameter("upFilterLimitZ", this->upFilterLimitZ);
-
-    get_parameter("BARQ_enabled", this->barq_enabled_);
-    get_parameter("BARQ_retry_delay_ms", this->barq_retry_delay_ms_);
-    get_parameter("BARQ_max_retries", this->barq_max_retries_);
-    get_parameter("BARQ_polling_rate_ms", this->barq_polling_rate_ms_);
-    get_parameter("filter", this->filterFlag);
-    get_parameter("segment", this->segmentFlag);
-    get_parameter("publishFilteredPc", this->publishFilteredPc);
-    get_parameter("publishSegmentedPc", this->publishSegmentedPc);
-    get_parameter("distanceThreshold", this->segP.distanceThreshold);
-    get_parameter("maxSegmentationDistance", this->segP.maxSegmentationDistance);
-    get_parameter("maxIterations", this->segP.maxIterations);
-    get_parameter("probability", this->segP.probability);
-    get_parameter("clustering", this->clusteringFlag);
-    get_parameter("publishCluster", this->publishCluster);
-#ifdef ENABLE_VERBOSE
-    get_parameter("limitWarning_ms", this->limitWarning_ms);
-#endif
-#ifdef NSIGHT_SDK
-    get_parameter("nsight_max_iterations", this->nsight_max_iterations);
-#endif
 }
 
 void ControllerNode::getInfo()
@@ -289,6 +316,14 @@ void ControllerNode::onTimer()
 
     const void* ptr = reader_->getLatest(sz, ts);
 
+    if (ts == last_barq_timestamp_ns_) {
+#ifdef ENABLE_VERBOSE
+        std::cout << "[BARQ] No new data (timestamp unchanged)" << std::endl;
+#endif
+        return;
+    }
+    last_barq_timestamp_ns_ = ts;
+
     if (!ptr || sz == 0) {
 #ifdef ENABLE_VERBOSE
         std::cout << "[BARQ] No data yet" << std::endl;
@@ -313,6 +348,16 @@ void ControllerNode::onTimer()
     std::memcpy(&height,     buf + off, sizeof(height));     off += sizeof(height);
     std::memcpy(&point_step, buf + off, sizeof(point_step)); off += sizeof(point_step);
     std::memcpy(&timestamp,  buf + off, sizeof(timestamp));  off += sizeof(timestamp);
+
+/**
+ * This timestamp confirms the exact same result as before, so not useful to add the BARQ header parsing time to the overall latency study
+ * 
+ #ifdef LATENCY_TESTING
+ const double header_ms = static_cast<double>(now_ns - ts) / 1e6;
+ std::cout << "BARQ header parsing latency: " << header_ms << " ms" << std::endl;
+ #endif
+ *
+ */
 
     const uint8_t* points = buf + off;
     

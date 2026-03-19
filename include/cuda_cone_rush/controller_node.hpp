@@ -67,6 +67,7 @@ private:
         int barq_max_retries_ = 5;
         int barq_retries_ = 0;
         int barq_polling_rate_ms_ = 16;  // default to ~60Hz
+        int64_t last_barq_timestamp_ns_ = 0;
 
         // ---------------------------------------------------------------------------
         // using pinned host memory instead of heap-allocated memory

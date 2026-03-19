@@ -34,8 +34,8 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
         } else {
             RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ reader initialized successfully.");
 
-            // Poll BARQ at 20Hz
-            this->timer_ = create_wall_timer(std::chrono::milliseconds(20), std::bind(&ControllerNode::onTimer, this));
+            // Poll BARQ at 1GHz
+            this->timer_ = create_wall_timer(std::chrono::milliseconds(1), std::bind(&ControllerNode::onTimer, this));
             break;
         }
     } while (this->barq_retries_ < this->barq_max_retries_);

@@ -44,7 +44,8 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
     this->ROSListenerInit();
 #endif
 
-    this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
+    this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, qos);
     if(this->filterFlag && this->publishFilteredPc)
         this->filtered_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->filtered_topic, 100);
     if(this->segmentFlag && this->publishSegmentedPc)

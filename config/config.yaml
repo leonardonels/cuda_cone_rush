@@ -16,6 +16,7 @@
     BARQ_polling_rate_ms: 1  # ~1KHz
 
     # ================ Pipeline options =================
+    ring_pipeline: false
     filter: true
     segment: true
     clustering: true

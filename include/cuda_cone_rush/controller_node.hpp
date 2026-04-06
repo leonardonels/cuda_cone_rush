@@ -8,11 +8,11 @@
 #include "cuda_cone_rush/segmentation/cuda_segmentation.hpp"
 #include "cuda_cone_rush/segmentation/isegmentation.hpp"
 
-#ifdef USE_CUDA_POINTCLOUD_CONVERTER
+#include "cuda_cone_rush/utils/iconverter.hpp"
 #include "cuda_cone_rush/utils/cuda_pointcloud_converter.hpp"
-#else
-#include "cuda_cone_rush/utils/pointcloud_converter.hpp"
-#endif
+#include "cuda_cone_rush/utils/cuda_ring_converter.hpp"
+#include "cuda_cone_rush/filtering/cuda_ring_filter.hpp"
+#include "cuda_cone_rush/segmentation/cuda_ring_segmentation.hpp"
 
 #include <cuda_runtime.h>
 #include <thrust/memory.h>
@@ -86,10 +86,8 @@ private:
         cudaStream_t compute_stream = NULL;
         cudaStream_t copy_stream = NULL;
 
-        #ifdef USE_CUDA_POINTCLOUD_CONVERTER
-        // resources for cuda pointcloud converter
-        pointcloud_utils::ConverterResources converter_res_;
-        #endif
+        IConverter *converter_;
+        bool ring_pipeline_ = false;
 
         IFilter *cudaFilter;
         IClustering *clustering;

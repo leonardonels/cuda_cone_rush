@@ -11,7 +11,6 @@ endif()
 option(ENABLE_BARQ "Enable BARQ for high-performance packet processing" OFF)
 option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
 option(LATENCY_TESTING "Print latency information for each BARQ callback" OFF)
-option(USE_CUDA_POINTCLOUD_CONVERTER "Build pointcloud_converter from CUDA implementation" ON)
 option(NSIGHT_SDK "Set an execution limit for NVIDIA Nsight Systems profiling" OFF)
 
 # Pinned memory: auto-detect architecture and set the default accordingly.
@@ -40,15 +39,6 @@ if(LATENCY_TESTING)
   add_definitions(-DLATENCY_TESTING)
 else()
   message(STATUS "Latency testing: DISABLED")
-endif()
-
-if(USE_CUDA_POINTCLOUD_CONVERTER)
-  message(STATUS "PointCloud converter backend: CUDA")
-  set(POINTCLOUD_CONVERTER_SOURCE src/utils/cuda_pointcloud_converter.cu)
-  add_definitions(-DUSE_CUDA_POINTCLOUD_CONVERTER)
-else()
-  message(STATUS "PointCloud converter backend: CPU")
-  set(POINTCLOUD_CONVERTER_SOURCE src/utils/pointcloud_converter.cpp)
 endif()
 
 if(NSIGHT_SDK)
@@ -136,6 +126,9 @@ target_link_libraries(cuda_cone_rush_node
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
+  cuda_ring_converter
+  cuda_ring_filter
+  cuda_ring_segmentation
 )
 target_include_directories(cuda_cone_rush_node PUBLIC include)
 
@@ -144,17 +137,33 @@ add_library(cluster_filtering src/clustering/cluster_filtering/dimension_filter.
 add_library(cuda_filtering src/filtering/cuda_filtering.cu)
 add_library(cuda_segmentation src/segmentation/cuda_segmentation.cu)
 
-# Optimized pointcloud converter library
-add_library(pointcloud_converter ${POINTCLOUD_CONVERTER_SOURCE})
+# Pointcloud converter (CUDA)
+add_library(pointcloud_converter src/utils/cuda_pointcloud_converter.cu)
 target_compile_options(pointcloud_converter PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:-O3 -march=native -mtune=native -ffast-math>
   $<$<COMPILE_LANGUAGE:CUDA>:-O3 --use_fast_math>
 )
 target_include_directories(pointcloud_converter PUBLIC include)
 ament_target_dependencies(pointcloud_converter
   sensor_msgs
-  pcl_conversions
-  PCL
+)
+
+# Ring-aware pipeline libraries
+add_library(cuda_ring_converter src/utils/cuda_ring_converter.cu)
+target_include_directories(cuda_ring_converter PUBLIC include)
+ament_target_dependencies(cuda_ring_converter
+  sensor_msgs
+)
+
+add_library(cuda_ring_filter src/filtering/cuda_ring_filter.cu)
+target_include_directories(cuda_ring_filter PUBLIC include)
+ament_target_dependencies(cuda_ring_filter
+  rclcpp
+)
+
+add_library(cuda_ring_segmentation src/segmentation/cuda_ring_segmentation.cu)
+target_include_directories(cuda_ring_segmentation PUBLIC include)
+ament_target_dependencies(cuda_ring_segmentation
+  rclcpp
 )
 
 ament_target_dependencies(cluster_filtering
@@ -179,6 +188,9 @@ target_link_libraries(${PROJECT_NAME}
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
+  cuda_ring_converter
+  cuda_ring_filter
+  cuda_ring_segmentation
 )
 if(barq_FOUND)
 ament_target_dependencies(${PROJECT_NAME}

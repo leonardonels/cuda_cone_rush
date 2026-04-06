@@ -2,23 +2,35 @@
 
 #include <csignal>
 
-/**
- *  [ ] change the way points are loaded into the pipeline to keep intensity and ring information (currently lost in the float array conversion)
- */
-
 ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 {
     this->loadParameters();
     this->getInfo();
 
+    /* Select converter (factory) */
+    if (ring_pipeline_) {
+        this->converter_ = new CudaRingConverter();
+    } else {
+        this->converter_ = new CudaConverter();
+    }
 
-    /* Select segmentation class */
-    this->segmentation = new CudaSegmentation(segP);
-    
-    /* Select filtering class */
-    this->cudaFilter = new CudaFilter(upFilterLimitX, downFilterLimitX, 
-                                   upFilterLimitY, downFilterLimitY, 
-                                   upFilterLimitZ, downFilterLimitZ);
+    /* Select filtering class (factory) */
+    if (ring_pipeline_) {
+        this->cudaFilter = new CudaRingFilter(upFilterLimitX, downFilterLimitX,
+                                       upFilterLimitY, downFilterLimitY,
+                                       upFilterLimitZ, downFilterLimitZ);
+    } else {
+        this->cudaFilter = new CudaFilter(upFilterLimitX, downFilterLimitX,
+                                       upFilterLimitY, downFilterLimitY,
+                                       upFilterLimitZ, downFilterLimitZ);
+    }
+
+    /* Select segmentation class (factory) */
+    if (ring_pipeline_) {
+        this->segmentation = new CudaRingSegmentation(segP);
+    } else {
+        this->segmentation = new CudaSegmentation(segP);
+    }
 
     /* Select clustering class */
     this->clustering = new CudaClustering(param);
@@ -69,6 +81,7 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 
 ControllerNode::~ControllerNode()
 {
+    delete this->converter_;
     delete this->segmentation;
     delete this->cudaFilter;
     delete this->clustering;
@@ -126,6 +139,7 @@ void ControllerNode::loadParameters()
 #endif
     
     // ================ Pipeline options =================
+    declare_parameter("ring_pipeline", false);
     declare_parameter("filter", false);
     declare_parameter("segment", false);
     declare_parameter("clustering", true);
@@ -190,6 +204,7 @@ void ControllerNode::loadParameters()
 #endif
 
     // ================ Pipeline options =================
+    get_parameter("ring_pipeline", this->ring_pipeline_);
     get_parameter("filter", this->filterFlag);
     get_parameter("segment", this->segmentFlag);
     get_parameter("clustering", this->clusteringFlag);
@@ -309,15 +324,7 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
 
     reserveAndResize(totalElements);
 
-#ifdef USE_CUDA_POINTCLOUD_CONVERTER
-    pointcloud_utils::convertPointCloud2ToFloatArray(sub_cloud, d_input, converter_res_);   // converto to device directly with cuda kernel
-#else
-    // -------------------------------------------------------
-    // convert PointCloud2 to float array and copy to device
-    // -------------------------------------------------------
-    pointcloud_utils::convertPointCloud2ToFloatArray(sub_cloud, h_input.data());
-    d_input = h_input;
-#endif
+    converter_->convert(sub_cloud, d_input);
 
     runPipeline(inputSize);
 }
@@ -435,6 +442,13 @@ void ControllerNode::runPipeline(unsigned int inputSize)
     float* raw_in  = nullptr;
     float* raw_out = nullptr;
 
+    // ring pointer tracks ring data through the pipeline (only used when ring_pipeline_)
+    float* ring_ptr = nullptr;
+    if (ring_pipeline_) {
+        auto* rc = static_cast<CudaRingConverter*>(converter_);
+        ring_ptr = rc->getRingPtr();
+    }
+
     // -----------------------------------------
     // CUDA Filtering (if enabled)
     // -----------------------------------------
@@ -442,16 +456,19 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         raw_in  = thrust::raw_pointer_cast(d_input.data());
         raw_out = thrust::raw_pointer_cast(d_output.data());
 
-        // ----------------------------------------------
-        // Call for cudaFilter
-        // ----------------------------------------------
+        if (ring_pipeline_ && ring_ptr) {
+            static_cast<CudaRingFilter*>(cudaFilter)->setRingInput(ring_ptr, inputSize);
+        }
+
         this->cudaFilter->filterPoints(raw_in, inputSize, &raw_out, &size, compute_stream);
         inputSize = size;
-        
+
         // after the swap d_input holds the filtered result
-        // while the kernel writes on d_output, 
-        // we can start copying the filtered result back to host for publishing
         d_input.swap(d_output);
+
+        if (ring_pipeline_) {
+            ring_ptr = static_cast<CudaRingFilter*>(cudaFilter)->getRingOutput();
+        }
 
         if (this->publishFilteredPc) {
             cudaMemcpyAsync(h_input.data(),
@@ -468,14 +485,20 @@ void ControllerNode::runPipeline(unsigned int inputSize)
     if (this->segmentFlag) {
         raw_in  = thrust::raw_pointer_cast(d_input.data());
         raw_out = thrust::raw_pointer_cast(d_output.data());
-        
+
+        if (ring_pipeline_ && ring_ptr) {
+            static_cast<CudaRingSegmentation*>(segmentation)->setRingInput(ring_ptr, inputSize);
+        }
+
         segmentation->segment(raw_in, inputSize, raw_out, &size, compute_stream);
         inputSize = size;
-        
+
         // after the swap d_input holds the segmented result
-        // while the kernel writes on d_output, 
-        // we can start copying the segmented result back to host for publishing
         d_input.swap(d_output);
+
+        if (ring_pipeline_) {
+            ring_ptr = static_cast<CudaRingSegmentation*>(segmentation)->getRingOutput();
+        }
 
         if (this->publishSegmentedPc && size != 0) {
             cudaMemcpyAsync(h_input.data(),

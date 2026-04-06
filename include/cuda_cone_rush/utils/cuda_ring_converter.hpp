@@ -7,22 +7,27 @@
 #include <cstdint>
 #include <cstddef>
 
-class CudaConverter : public IConverter
+class CudaRingConverter : public IConverter
 {
 public:
-    CudaConverter();
-    ~CudaConverter() override;
+    CudaRingConverter();
+    ~CudaRingConverter() override;
 
-    CudaConverter(const CudaConverter&)            = delete;
-    CudaConverter& operator=(const CudaConverter&) = delete;
+    CudaRingConverter(const CudaRingConverter&)            = delete;
+    CudaRingConverter& operator=(const CudaRingConverter&) = delete;
 
     void convert(const sensor_msgs::msg::PointCloud2::SharedPtr& sub_cloud,
                  thrust::device_vector<float>& d_out) override;
+
+    /// Raw device pointer to ring data (valid after convert())
+    float* getRingPtr() { return thrust::raw_pointer_cast(d_ring_.data()); }
 
 private:
     std::uint8_t* d_input_      = nullptr;
     std::size_t   input_bytes_  = 0;
     cudaStream_t  stream_       = nullptr;
+
+    thrust::device_vector<float> d_ring_;
 
     void reserve(std::size_t in_bytes);
 };

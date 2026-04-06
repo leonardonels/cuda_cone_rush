@@ -19,7 +19,10 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#ifdef ENABLE_BARQ
 #include "barq/barq.hpp"
+#include "barq/barq_pcl.hpp"
+#endif
 
 #ifdef USE_PINNED_MEMORY
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
@@ -59,15 +62,18 @@ private:
         #endif
 
         // BARQ
+        bool barq_enabled_ = false;
+        #ifdef ENABLE_BARQ
+        std::string barq_topic;
         rclcpp::TimerBase::SharedPtr timer_;
         std::unique_ptr<BARQ::Reader> reader_;
         size_t barq_max_size_ = 0;
         size_t barq_retry_delay_ms_ = 100;
-        bool barq_enabled_ = false;
         int barq_max_retries_ = 5;
         int barq_retries_ = 0;
         int barq_polling_rate_ms_ = 16;  // default to ~60Hz
         int64_t last_barq_timestamp_ns_ = 0;
+        #endif
 
         // ---------------------------------------------------------------------------
         // using pinned host memory instead of heap-allocated memory
@@ -99,8 +105,10 @@ private:
         /* Load parameters function */
         void loadParameters();
 
+        #ifdef ENABLE_BARQ
         /* Initialize BARQ reader */
         void BARQ_reader_init();
+        #endif
 
         /* Reserve and resize memory before processing */
         void reserveAndResize(size_t inputSize);
@@ -108,8 +116,10 @@ private:
         /* PointCloud Callback - ROS2 entry point */
         void scanCallback(const sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud);
 
+        #ifdef ENABLE_BARQ
         /* Timer callback - BARQ entry point */
         void onTimer();
+        #endif
 
         /* where the magic happens */
         void runPipeline(unsigned int inputSize);

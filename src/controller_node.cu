@@ -2,6 +2,10 @@
 
 #include <csignal>
 
+/**
+ *  [ ] change the way points are loaded into the pipeline to keep intensity and ring information (currently lost in the float array conversion)
+ */
+
 ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 {
     this->loadParameters();
@@ -19,17 +23,21 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
     /* Select clustering class */
     this->clustering = new CudaClustering(param);
 
+#ifdef ENABLE_BARQ
     if (this->barq_enabled_) {
         /* Create BARQ subscriber */
         this->BARQ_reader_init();
     }else{
+#endif
         /* Define QoS for Best Effort messages transport */
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
         
         /* Create ROS2 subscriber */
         this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
                                                                                    std::bind(&ControllerNode::scanCallback, this, std::placeholders::_1));
+#ifdef ENABLE_BARQ
     }
+#endif
 
     this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
     if(this->filterFlag && this->publishFilteredPc)
@@ -69,18 +77,17 @@ ControllerNode::~ControllerNode()
     if (compute_stream) cudaStreamDestroy(compute_stream);
 }
 
+#ifdef ENABLE_BARQ
 void ControllerNode::BARQ_reader_init()
 {
     RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Initializing BARQ reader...");
-    
+
     /* Define BARQ transport layer */
     const size_t kMaxPoints = 300000;
-    const size_t kPointStep = sizeof(float) * 4 + sizeof(uint16_t) + sizeof(double);
-    const size_t kHeaderBytes = sizeof(uint32_t) * 3 + sizeof(double);
-    barq_max_size_ = kMaxPoints * kPointStep + kHeaderBytes + 512;
-    
+    barq_max_size_ = sizeof(BARQFrameHeader) + kMaxPoints * sizeof(BARQPoint) + 512;
+
     do{
-        this->reader_ = std::make_unique<BARQ::Reader>("/hesai_pointcloud", this->barq_max_size_);
+        this->reader_ = std::make_unique<BARQ::Reader>(this->barq_topic, this->barq_max_size_);
         if (!reader_->init()) {
             RCLCPP_WARN(rclcpp::get_logger("cuda_cone_rush_node"), "Failed to initialize BARQ reader, retrying in %zu ms...", this->barq_retry_delay_ms_);
             std::this_thread::sleep_for(std::chrono::milliseconds(this->barq_retry_delay_ms_));
@@ -98,6 +105,7 @@ void ControllerNode::BARQ_reader_init()
         // std::raise(SIGINT);  // Gracefully shutdown the node
     }
 }
+#endif
 
 void ControllerNode::loadParameters()
 {
@@ -110,9 +118,12 @@ void ControllerNode::loadParameters()
     
     // ================ BARQ options =================
     declare_parameter("BARQ_enabled", false);
+#ifdef ENABLE_BARQ
+    declare_parameter("BARQ_topic", "/lidar_points");
     declare_parameter("BARQ_retry_delay_ms", 10);
     declare_parameter("BARQ_max_retries", 5);
     declare_parameter("BARQ_polling_rate_ms", 1);  // 1 ms corresponds to ~1KHz
+#endif
     
     // ================ Pipeline options =================
     declare_parameter("filter", false);
@@ -171,9 +182,12 @@ void ControllerNode::loadParameters()
 
     // ================ BARQ options =================
     get_parameter("BARQ_enabled", this->barq_enabled_);
+#ifdef ENABLE_BARQ
+    get_parameter("BARQ_topic", this->barq_topic);
     get_parameter("BARQ_retry_delay_ms", this->barq_retry_delay_ms_);
     get_parameter("BARQ_max_retries", this->barq_max_retries_);
     get_parameter("BARQ_polling_rate_ms", this->barq_polling_rate_ms_);
+#endif
 
     // ================ Pipeline options =================
     get_parameter("filter", this->filterFlag);
@@ -308,6 +322,25 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
     runPipeline(inputSize);
 }
 
+#ifdef ENABLE_BARQ
+/**
+ * struct __attribute__((packed)) BARQPoint {
+ *     float    x;
+ *     float    y;
+ *     float    z;
+ *     float    intensity;   // promoted from uint8_t on write
+ *     uint16_t ring;
+ *     double   timestamp;
+ * };  // 26 bytes
+ * 
+ * struct __attribute__((packed)) BARQFrameHeader {
+ *     uint32_t width;       // number of valid points
+ *     uint32_t height;      // always 1
+ *     uint32_t point_step;  // always sizeof(BARQPoint) = 26
+ *     double   timestamp;   // frame start timestamp (seconds)
+ * };  // 20 bytes
+ */
+
 // BARQ entry point for processing — identical pipeline, different input source
 void ControllerNode::onTimer()
 {
@@ -385,6 +418,7 @@ void ControllerNode::onTimer()
 
     runPipeline(inputSize);
 }
+#endif
 
 // Extracted from scanCallback and onTimer since ROS2 and BARQ share the same processing pipeline after input conversion
 void ControllerNode::runPipeline(unsigned int inputSize)

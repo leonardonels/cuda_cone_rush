@@ -9,7 +9,8 @@
     frame_id: "hesai_lidar"
 
     # ================ BARQ options =================
-    BARQ_enabled: false      # false to disable BARQ and use ROS2 as normal
+    BARQ_enabled: true      # false to disable BARQ and use ROS2 as normal
+    BARQ_topic: /lidar_points
     BARQ_retry_delay_ms: 100
     BARQ_max_retries: 50
     BARQ_polling_rate_ms: 1  # ~1KHz

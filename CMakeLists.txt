@@ -8,6 +8,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
 
+option(ENABLE_BARQ "Enable BARQ for high-performance packet processing" OFF)
 option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
 option(LATENCY_TESTING "Print latency information for each BARQ callback" OFF)
 option(USE_CUDA_POINTCLOUD_CONVERTER "Build pointcloud_converter from CUDA implementation" ON)
@@ -55,6 +56,40 @@ if(NSIGHT_SDK)
   add_definitions(-DNSIGHT_SDK)
 else()
   message(STATUS "NVIDIA Nsight Systems profiling: DISABLED")
+endif()
+
+if($ENV{ENABLE_BARQ})
+  set(ENABLE_BARQ ON)
+endif()
+
+if(ENABLE_BARQ)
+  find_package(barq QUIET)
+  if (NOT barq_FOUND)
+    message(FATAL_ERROR 
+      "============================================================\n"
+      "ENABLE_BARQ is ON, but the BARQ package was not found.\n"
+      "This package is not avaiable on rosdep or apt.\n"
+      "You must clone and built it manually from:\n"
+      "    cd ~/ros2_ws/src\n"
+      "    git clone https://github.com/leonardonels/barq.git\n"
+      "    cd ~/ros2_ws && colcon build\n"
+      "Then rebuild this package with:\n"
+      "    cd ~/ros2_ws && ENABLE_BARQ=1 colcon build --packages-up-to hesai_ros_driver --cmake-args -DCMAKE_BUILD_TYPE=Release\n"
+      "============================================================\n"
+    )
+  endif()
+  message(
+    "============================================================\n"
+    "-- BARQ is ENABLED\n"
+    "============================================================\n"
+  )
+  add_definitions(-DENABLE_BARQ)
+else()
+  message( 
+    "============================================================\n"
+    "-- BARQ is DISABLED - IF YOU WANT TO ENABLE BARQ, PLEASE SET ENV ENABLE_BARQ=1 BEFORE BUILDING THIS PACKAGE\n"
+    "============================================================\n"
+  )
 endif()
 
 #set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-12.8")
@@ -108,9 +143,6 @@ add_library(cuda_clustering src/clustering/cuda_clustering.cu)
 add_library(cluster_filtering src/clustering/cluster_filtering/dimension_filter.cpp)
 add_library(cuda_filtering src/filtering/cuda_filtering.cu)
 add_library(cuda_segmentation src/segmentation/cuda_segmentation.cu)
-add_library(barq_lib src/barq/barq.cpp)
-
-target_include_directories(barq_lib PUBLIC include)
 
 # Optimized pointcloud converter library
 add_library(pointcloud_converter ${POINTCLOUD_CONVERTER_SOURCE})
@@ -147,8 +179,17 @@ target_link_libraries(${PROJECT_NAME}
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
-  barq_lib
 )
+if(barq_FOUND)
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  sensor_msgs
+  visualization_msgs
+  pcl_conversions
+  PCL
+  barq
+)
+else()
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   sensor_msgs
@@ -156,6 +197,7 @@ ament_target_dependencies(${PROJECT_NAME}
   pcl_conversions
   PCL
 )
+endif()
 
 target_link_libraries(${PROJECT_NAME}_node 
   ${PROJECT_NAME}

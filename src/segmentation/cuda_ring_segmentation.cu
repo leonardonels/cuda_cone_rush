@@ -7,6 +7,11 @@
 #include <thrust/scan.h>
 
 // ==========================================================================
+//  Note: This implementation assumes Y axis is forward, X axis is right, and Z axis is up (ROS standard).
+//        But it is not: X is forward, Y is left, Z is up (Velodyne standard).
+// ==========================================================================  
+
+// ==========================================================================
 //  Constant memory: ring group boundaries (uploaded once in constructor)
 // ==========================================================================
 static __constant__ int c_ring_bounds[65];   // max 64 groups → 65 boundaries

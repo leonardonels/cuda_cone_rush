@@ -16,13 +16,13 @@
     BARQ_polling_rate_ms: 1  # ~1KHz
 
     # ================ Pipeline options =================
-    ring_pipeline: false
+    ring_pipeline: false    # Work In Progress
     filter: true
     segment: true
     clustering: true
     
-    publishFilteredPc: true
-    publishSegmentedPc: true
+    publishFilteredPc: false
+    publishSegmentedPc: false
     publishCluster: true
 
     # ================ Debug options =================

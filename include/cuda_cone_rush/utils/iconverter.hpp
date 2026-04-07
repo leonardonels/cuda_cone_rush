@@ -6,7 +6,7 @@
 class IConverter
 {
 public:
-    virtual void convert(
+    virtual unsigned int convert(
         const sensor_msgs::msg::PointCloud2::SharedPtr& sub_cloud,
         thrust::device_vector<float>& d_out) = 0;
     virtual ~IConverter() = default;

@@ -9,7 +9,7 @@
     frame_id: "hesai_lidar"
 
     # ================ BARQ options =================
-    BARQ_enabled: false      # false to disable BARQ and use ROS2 as normal
+    BARQ_enabled: true      # false to disable BARQ and use ROS2 as normal
     BARQ_topic: /lidar_points
     BARQ_retry_delay_ms: 100
     BARQ_max_retries: 50
@@ -39,7 +39,7 @@
 
     # ================ Segmentation options =================
     distanceThreshold: 0.1            # from the plane
-    maxSegmentationDistance: 200.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
+    maxSegmentationDistance: 2000.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
     maxIterations: 80                 # by requiring the plane to be found form 3 points close to the car the max number of iterations can be reduce to 1/3
     probability: 0.75
     

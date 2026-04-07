@@ -331,7 +331,7 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
 
     reserveAndResize(totalElements);
 
-    converter_->convert(sub_cloud, d_input);
+    inputSize = converter_->convert(sub_cloud, d_input);
 
     runPipeline(inputSize);
 }
@@ -421,16 +421,43 @@ void ControllerNode::onTimer()
 
     reserveAndResize(totalElements);
 
+    if (ring_pipeline_) {
+        h_ring_barq_.resize(width);
+    }
+
+    unsigned int validCount = 0;
     for (uint32_t i = 0; i < width; ++i) {
         const uint8_t* p = points + i * point_step;
-        std::memcpy(&h_input[i*4+0], p,      sizeof(float));
-        std::memcpy(&h_input[i*4+1], p+4,    sizeof(float));
-        std::memcpy(&h_input[i*4+2], p+8,    sizeof(float));
-        std::memcpy(&h_input[i*4+3], p+12,   sizeof(float));
+
+        float x, y, z;
+        std::memcpy(&x, p,     sizeof(float));
+        std::memcpy(&y, p + 4, sizeof(float));
+        std::memcpy(&z, p + 8, sizeof(float));
+
+        if (x == 0.0f && y == 0.0f && z == 0.0f) continue;
+
+        h_input[validCount*4+0] = x;
+        h_input[validCount*4+1] = y;
+        h_input[validCount*4+2] = z;
+        std::memcpy(&h_input[validCount*4+3], p+12, sizeof(float));
+
+        if (ring_pipeline_) {
+            uint16_t ring;
+            std::memcpy(&ring, p + 16, sizeof(uint16_t));
+            h_ring_barq_[validCount] = static_cast<float>(ring);
+        }
+        validCount++;
     }
+
+    h_input.resize(validCount * 4);
     d_input = h_input;
 
-    runPipeline(inputSize);
+    if (ring_pipeline_) {
+        h_ring_barq_.resize(validCount);
+        d_ring_barq_ = h_ring_barq_;
+    }
+
+    runPipeline(validCount);
 }
 #endif
 
@@ -452,8 +479,16 @@ void ControllerNode::runPipeline(unsigned int inputSize)
     // ring pointer tracks ring data through the pipeline (only used when ring_pipeline_)
     float* ring_ptr = nullptr;
     if (ring_pipeline_) {
-        auto* rc = static_cast<CudaRingConverter*>(converter_);
-        ring_ptr = rc->getRingPtr();
+#ifdef ENABLE_BARQ
+        if (barq_enabled_) {
+            ring_ptr = thrust::raw_pointer_cast(d_ring_barq_.data());
+        } else {
+#endif
+            auto* rc = static_cast<CudaRingConverter*>(converter_);
+            ring_ptr = rc->getRingPtr();
+#ifdef ENABLE_BARQ
+        }
+#endif
     }
 
     // -----------------------------------------

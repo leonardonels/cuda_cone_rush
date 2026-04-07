@@ -9,6 +9,7 @@ namespace
 __global__ void convertPointCloud2Kernel(
     const std::uint8_t* __restrict__ input_data,
     float*              __restrict__ output_data,
+    std::uint32_t*      __restrict__ valid_count,
     std::uint32_t width,
     std::uint32_t height,
     std::uint32_t row_step,
@@ -23,14 +24,16 @@ __global__ void convertPointCloud2Kernel(
         + static_cast<std::size_t>(r) * row_step
         + static_cast<std::size_t>(c) * point_step;
 
-    const std::uint64_t out_idx =
-        static_cast<std::uint64_t>(r * width + c) * 4;
-
     float x, y, z, intensity;
     memcpy(&x,         src + 0,  sizeof(float));
     memcpy(&y,         src + 4,  sizeof(float));
     memcpy(&z,         src + 8,  sizeof(float));
     memcpy(&intensity, src + 12, sizeof(float));
+
+    if (x == 0.0f && y == 0.0f && z == 0.0f) return;
+
+    const std::uint32_t idx = atomicAdd(valid_count, 1u);
+    const std::uint64_t out_idx = static_cast<std::uint64_t>(idx) * 4;
 
     output_data[out_idx + 0] = x;
     output_data[out_idx + 1] = y;
@@ -43,11 +46,13 @@ __global__ void convertPointCloud2Kernel(
 CudaConverter::CudaConverter()
 {
     cudaStreamCreate(&stream_);
+    cudaMalloc(&d_count_, sizeof(std::uint32_t));
 }
 
 CudaConverter::~CudaConverter()
 {
     cudaFree(d_input_);
+    cudaFree(d_count_);
     cudaStreamDestroy(stream_);
 }
 
@@ -63,7 +68,7 @@ void CudaConverter::reserve(std::size_t in_bytes)
     }
 }
 
-void CudaConverter::convert(
+unsigned int CudaConverter::convert(
     const sensor_msgs::msg::PointCloud2::SharedPtr& sub_cloud,
     thrust::device_vector<float>& d_out)
 {
@@ -72,7 +77,7 @@ void CudaConverter::convert(
     const std::uint32_t row_step   = sub_cloud->row_step;
     const std::uint32_t point_step = sub_cloud->point_step;
 
-    if (width == 0 || height == 0) return;
+    if (width == 0 || height == 0) return 0;
 
     const std::size_t in_bytes   = sub_cloud->data.size();
     const std::size_t out_floats = static_cast<std::size_t>(width) * height * 4;
@@ -84,6 +89,7 @@ void CudaConverter::convert(
 
     cudaMemcpyAsync(d_input_, sub_cloud->data.data(),
                     in_bytes, cudaMemcpyHostToDevice, stream_);
+    cudaMemsetAsync(d_count_, 0, sizeof(std::uint32_t), stream_);
 
     const dim3 threads(16, 16);
     const dim3 blocks((width + 15) / 16, (height + 15) / 16);
@@ -91,8 +97,14 @@ void CudaConverter::convert(
     convertPointCloud2Kernel<<<blocks, threads, 0, stream_>>>(
         d_input_,
         thrust::raw_pointer_cast(d_out.data()),
+        d_count_,
         width, height,
         row_step, point_step);
 
+    std::uint32_t h_count = 0;
+    cudaMemcpyAsync(&h_count, d_count_, sizeof(std::uint32_t),
+                    cudaMemcpyDeviceToHost, stream_);
     cudaStreamSynchronize(stream_);
+
+    return static_cast<unsigned int>(h_count);
 }

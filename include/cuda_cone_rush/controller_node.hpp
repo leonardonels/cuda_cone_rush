@@ -73,6 +73,8 @@ private:
         int barq_retries_ = 0;
         int barq_polling_rate_ms_ = 16;  // default to ~60Hz
         int64_t last_barq_timestamp_ns_ = 0;
+        pinned_host_vector<float> h_ring_barq_;
+        thrust::device_vector<float> d_ring_barq_;
         #endif
 
         // ---------------------------------------------------------------------------

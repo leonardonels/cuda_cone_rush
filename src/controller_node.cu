@@ -169,6 +169,8 @@ void ControllerNode::loadParameters()
     declare_parameter("maxSegmentationDistance", 20.0);
     declare_parameter("maxIterations", 80);
     declare_parameter("probability", 0.75);
+    declare_parameter("ring_group_boundaries",
+                      std::vector<int64_t>{0, 32, 64, 96, 128});
     
     // ================ Clustering options =================
     declare_parameter("minClusterSize", 1);
@@ -234,6 +236,11 @@ void ControllerNode::loadParameters()
     get_parameter("maxSegmentationDistance", this->segP.maxSegmentationDistance);
     get_parameter("maxIterations", this->segP.maxIterations);
     get_parameter("probability", this->segP.probability);
+    {
+        std::vector<int64_t> rgb_i64;
+        get_parameter("ring_group_boundaries", rgb_i64);
+        segP.ringGroupBoundaries.assign(rgb_i64.begin(), rgb_i64.end());
+    }
     
     // ================ Clustering options =================
     get_parameter("minClusterSize", this->param.clustering.minClusterSize);

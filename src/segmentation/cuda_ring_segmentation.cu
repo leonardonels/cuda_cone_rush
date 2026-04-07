@@ -7,8 +7,8 @@
 #include <thrust/scan.h>
 
 // ==========================================================================
-//  Note: This implementation assumes Y axis is forward, X axis is right, and Z axis is up (ROS standard).
-//        But it is not: X is forward, Y is left, Z is up (Velodyne standard).
+//  Note: This implementation uses Velodyne convention:
+//        X is forward, Y is left, Z is up.
 // ==========================================================================  
 
 // ==========================================================================
@@ -40,8 +40,8 @@ __device__ inline unsigned int wang_hash_ring(unsigned int seed) {
 //  Phase 1a: Classify each point into a patch and count per-patch totals
 // ==========================================================================
 //  patch_id = ring_group * 2 + side
-//    even patch_id → right (x >= 0)
-//    odd  patch_id → left  (x <  0)
+//    even patch_id → right (y <  0)
+//    odd  patch_id → left  (y >= 0)
 // ==========================================================================
 __global__ void countPatchKernel(
     const float* __restrict__ points,
@@ -55,7 +55,7 @@ __global__ void countPatchKernel(
 
     int ring_id = __float2int_rn(rings[i]);
     int rg   = ringToGroup(ring_id);
-    int side = (points[i * 4] >= 0.0f) ? 0 : 1;
+    int side = (points[i * 4 + 1] < 0.0f) ? 0 : 1;
     int patch = rg * 2 + side;
 
     patch_of[i] = patch;

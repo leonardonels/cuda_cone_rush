@@ -66,15 +66,18 @@ private:
         #ifdef ENABLE_BARQ
         std::string barq_topic;
         rclcpp::TimerBase::SharedPtr timer_;
+        rclcpp::TimerBase::SharedPtr writer_health_check_timer_;
         std::unique_ptr<BARQ::Reader> reader_;
         size_t barq_max_size_ = 0;
         size_t barq_retry_delay_ms_ = 100;
         int barq_max_retries_ = 5;
         int barq_retries_ = 0;
         int barq_polling_rate_ms_ = 16;  // default to ~60Hz
+        int barq_writer_timeout_ms_ = 1000; // timeout for writer health check
         int64_t last_barq_timestamp_ns_ = 0;
         pinned_host_vector<float> h_ring_barq_;
         thrust::device_vector<float> d_ring_barq_;
+        bool barq_initialized_ = false;
         #endif
 
         // ---------------------------------------------------------------------------
@@ -104,10 +107,16 @@ private:
 
         /* Load parameters function */
         void loadParameters();
+        
+        /* Initialize ROS2 listener */
+        void ROSListenerInit();
 
         #ifdef ENABLE_BARQ
         /* Initialize BARQ reader */
-        void BARQ_reader_init();
+        void BARQReaderInit();
+
+        /* Check if writer is alive */
+        void checkForWriterHealth();
         #endif
 
         /* Reserve and resize memory before processing */

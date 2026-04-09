@@ -9,11 +9,12 @@
     frame_id: "hesai_lidar"
 
     # ================ BARQ options =================
-    BARQ_enabled: false      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
+    BARQ_enabled: true      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
     BARQ_topic: /lidar_points
     BARQ_retry_delay_ms: 100
-    BARQ_max_retries: 50
+    BARQ_max_retries: 20
     BARQ_polling_rate_ms: 1  # ~1KHz
+    BARQ_writer_timeout_ms: 1000  # Time in ms to check if the writer is alive
 
     # ================ Pipeline options =================
     ring_pipeline: false    # Work In Progress

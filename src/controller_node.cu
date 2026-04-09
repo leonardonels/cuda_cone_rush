@@ -38,17 +38,10 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 #ifdef ENABLE_BARQ
     if (this->barq_enabled_) {
         /* Create BARQ subscriber */
-        this->BARQ_reader_init();
-    }else{
-#endif
-        /* Define QoS for Best Effort messages transport */
-        auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
-        
-        /* Create ROS2 subscriber */
-        this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
-                                                                                   std::bind(&ControllerNode::scanCallback, this, std::placeholders::_1));
-#ifdef ENABLE_BARQ
+        this->BARQReaderInit();
     }
+#else
+    this->ROSListenerInit();
 #endif
 
     this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
@@ -90,8 +83,18 @@ ControllerNode::~ControllerNode()
     if (compute_stream) cudaStreamDestroy(compute_stream);
 }
 
+void ControllerNode::ROSListenerInit(){
+    /* Define QoS for Best Effort messages transport */
+    auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
+        
+    /* Create ROS2 subscriber */
+    this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
+                                                                                   std::bind(&ControllerNode::scanCallback, this, std::placeholders::_1));
+    RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Subscribed to topic: %s", this->input_topic.c_str());
+}
+
 #ifdef ENABLE_BARQ
-void ControllerNode::BARQ_reader_init()
+void ControllerNode::BARQReaderInit()
 {
     RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Initializing BARQ reader...");
 
@@ -106,16 +109,22 @@ void ControllerNode::BARQ_reader_init()
             std::this_thread::sleep_for(std::chrono::milliseconds(this->barq_retry_delay_ms_));
             this->barq_retries_++;
         } else {
-            RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ reader initialized successfully.");
-
-            // Poll BARQ at 60Hz
             this->timer_ = create_wall_timer(std::chrono::milliseconds(this->barq_polling_rate_ms_), std::bind(&ControllerNode::onTimer, this));
+            RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ reader initialized successfully.");
+            
+            this->writer_health_check_timer_ = create_wall_timer(std::chrono::milliseconds(this->barq_writer_timeout_ms_), std::bind(&ControllerNode::checkForWriterHealth, this));
+            RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ writer health check initialized successfully."); 
+
+            this->barq_retries_= 0 ;
             break;
         }
     } while (this->barq_retries_ < this->barq_max_retries_);
     if (this->barq_retries_ >= this->barq_max_retries_) {
-        RCLCPP_ERROR(rclcpp::get_logger("cuda_cone_rush_node"), "Exceeded maximum BARQ initialization retries (%d), exiting.", this->barq_max_retries_);
+        RCLCPP_ERROR(rclcpp::get_logger("cuda_cone_rush_node"), "Exceeded maximum BARQ initialization retries (%d), switching to ROS2 subscriber.", this->barq_max_retries_);
         // std::raise(SIGINT);  // Gracefully shutdown the node
+        if (this->timer_) this->timer_->cancel();
+        if (this->writer_health_check_timer_) this->writer_health_check_timer_->cancel();
+        this->ROSListenerInit();    // Fallback to ROS2 subscriber if BARQ fails to initialize
     }
 }
 #endif
@@ -136,6 +145,7 @@ void ControllerNode::loadParameters()
     declare_parameter("BARQ_retry_delay_ms", 10);
     declare_parameter("BARQ_max_retries", 5);
     declare_parameter("BARQ_polling_rate_ms", 1);  // 1 ms corresponds to ~1KHz
+    declare_parameter("BARQ_writer_timeout_ms", 1000);
 #endif
     
     // ================ Pipeline options =================
@@ -203,6 +213,7 @@ void ControllerNode::loadParameters()
     get_parameter("BARQ_retry_delay_ms", this->barq_retry_delay_ms_);
     get_parameter("BARQ_max_retries", this->barq_max_retries_);
     get_parameter("BARQ_polling_rate_ms", this->barq_polling_rate_ms_);
+    get_parameter("BARQ_writer_timeout_ms", this->barq_writer_timeout_ms_);
 #endif
 
     // ================ Pipeline options =================
@@ -277,8 +288,19 @@ void ControllerNode::getInfo()
         RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "  threads in a block: %d", prop.maxThreadsPerBlock);
         RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "  block dim: (%d,%d,%d)", prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
         RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "  grid dim: (%d,%d,%d)", prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
+        RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "-------------------------");
     }
 }
+
+#ifdef ENABLE_BARQ
+void ControllerNode::checkForWriterHealth()
+{   if (reader_->isWriterAlive()) return;
+    RCLCPP_ERROR(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ writer is not alive. Attempting to reinitialize...");
+    this->timer_->cancel();
+    this->reader_->destroy();
+    this->BARQReaderInit();
+}
+#endif
 
 void ControllerNode::publishPc(float *points, unsigned int size, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub)
 {

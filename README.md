@@ -9,6 +9,15 @@ The processing pipeline stays on CUDA buffers across stages:
 PointCloud2 -> optional XYZ filter -> optional ground segmentation -> optional voxel clustering -> cone markers
 ```
 
+## TODO
+```
+[cuda_cone_rush_node-1] [WARN] [1775749308.140774720] [cuda_cone_rush_node]: Not enough points for clustering (0 < 1)
+[cuda_cone_rush_node-1] terminate called after throwing an instance of 'thrust::THRUST_200500_520_NS::system::system_error'
+[cuda_cone_rush_node-1]   what():  parallel_for failed: cudaErrorInvalidDevice: invalid device ordinal
+[ERROR] [cuda_cone_rush_node-1]: process has died [pid 8233, exit code -6, cmd '/home/orin/ros2_dev/install/cuda_cone_rush/lib/cuda_cone_rush/cuda_cone_rush_node --ros-args -r __node:=cuda_cone_rush_node --params-file /home/orin/ros2_dev/install/cuda_cone_rush/share/cuda_cone_rush/config/config.yaml'].
+
+```
+
 ## Tested on
 | Lidar Points | Board | avg exec (ms) |
 | --- | --- | --- |

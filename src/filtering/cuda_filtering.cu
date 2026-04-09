@@ -61,6 +61,11 @@ void CudaFilter::filterPoints(float* inputData, unsigned int inputSize,
                               float** output, unsigned int* outputSize,
                               cudaStream_t stream)
 {
+    if (inputSize == 0) {
+        *outputSize = 0;
+        return;
+    }
+
     #ifdef ENABLE_VERBOSE
         auto t1 = std::chrono::steady_clock::now();
     #endif

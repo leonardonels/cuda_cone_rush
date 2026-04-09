@@ -2,14 +2,14 @@
 /cuda_cone_rush_node:
   ros__parameters:
     # ================ Topics and Frames =================
-    input_topic: /lidar_points #/lidar_points
+    input_topic: /lidar_points
     segmented_topic: /segmented_points
     filtered_topic: /filtered_points
-    cluster_topic: /clusters #/perception/newclusters
+    cluster_topic: /clusters
     frame_id: "hesai_lidar"
 
     # ================ BARQ options =================
-    BARQ_enabled: true      # false to disable BARQ and use ROS2 as normal
+    BARQ_enabled: false      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
     BARQ_topic: /lidar_points
     BARQ_retry_delay_ms: 100
     BARQ_max_retries: 50

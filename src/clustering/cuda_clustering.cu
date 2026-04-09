@@ -567,6 +567,10 @@ void CudaClustering::extractClusters(
 
     int numFiltered = (int)(filt_end - d_filteredKeys.begin());
 
+    if (numFiltered == 0) {
+        return;  // no voxels survive countThreshold — nothing to cluster
+    }
+
     // ------------------------------------------------------------------
     // 6. Union-find on 26-connected voxel grid
     // ------------------------------------------------------------------
@@ -649,12 +653,13 @@ void CudaClustering::extractClusters(
     // ------------------------------------------------------------------
     // 10. Dimension filter on GPU → cone points
     // ------------------------------------------------------------------
+    if (numClusters == 0) {
+        return;  // no clusters formed — nothing to dimension-filter
+    }
+
     d_conePoints.resize(numClusters * 3);
-    // zero the numCones counter (d_countsDevice[3])
-    // cudaMemsetAsync(&d_countsDevice[3], 0, sizeof(int), stream);    // already done previously
 
     blocks = (numClusters + dimensionFilterKernel_block_size - 1) / dimensionFilterKernel_block_size;
-    if (blocks == 0) blocks = 1;
     dimensionFilterKernel<<<blocks, dimensionFilterKernel_block_size, 0, stream>>>(
         thrust::raw_pointer_cast(d_clusterBBox.data()),
         thrust::raw_pointer_cast(d_clusterSizes.data()),

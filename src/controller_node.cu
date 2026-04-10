@@ -43,9 +43,7 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 #else
     this->ROSListenerInit();
 #endif
-
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
-    this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, qos);
+    this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
     if(this->filterFlag && this->publishFilteredPc)
         this->filtered_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->filtered_topic, 100);
     if(this->segmentFlag && this->publishSegmentedPc)
@@ -85,8 +83,9 @@ ControllerNode::~ControllerNode()
 }
 
 void ControllerNode::ROSListenerInit(){
-    /* Define QoS for Best Effort messages transport */
-    auto qos = rclcpp::QoS(rclcpp::KeepLast(10), rmw_qos_profile_sensor_data);
+    auto qos = rclcpp::QoS(rclcpp::SensorDataQoS());
+    // depth is already 5 from the profile, override if needed:
+    // qos.keep_last(10);
         
     /* Create ROS2 subscriber */
     this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,

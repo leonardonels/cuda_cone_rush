@@ -6,6 +6,7 @@
 namespace
 {
 
+template<bool FilterZeros>
 __global__ void convertPointCloud2WithRingKernel(
     const std::uint8_t* __restrict__ input_data,
     float*              __restrict__ output_data,
@@ -31,9 +32,14 @@ __global__ void convertPointCloud2WithRingKernel(
     memcpy(&z,         src + 8,  sizeof(float));
     memcpy(&intensity, src + 12, sizeof(float));
 
-    if (x == 0.0f && y == 0.0f && z == 0.0f) return;
+    std::uint32_t idx;
+    if constexpr (FilterZeros){
+         if (x == 0.0f && y == 0.0f && z == 0.0f) return;
+         idx = atomicAdd(valid_count, 1u);
+    } else {
+         idx = r * width + c;
+    }
 
-    const std::uint32_t idx = atomicAdd(valid_count, 1u);
     const std::uint64_t out_idx = static_cast<std::uint64_t>(idx) * 4;
 
     output_data[out_idx + 0] = x;
@@ -48,7 +54,8 @@ __global__ void convertPointCloud2WithRingKernel(
 
 } // anonymous namespace
 
-CudaRingConverter::CudaRingConverter()
+CudaRingConverter::CudaRingConverter(bool filter_zeros)
+    : filter_zeros_(filter_zeros)
 {
     cudaStreamCreate(&stream_);
     cudaMalloc(&d_count_, sizeof(std::uint32_t));
@@ -97,23 +104,35 @@ unsigned int CudaRingConverter::convert(
 
     cudaMemcpyAsync(d_input_, sub_cloud->data.data(),
                     in_bytes, cudaMemcpyHostToDevice, stream_);
-    cudaMemsetAsync(d_count_, 0, sizeof(std::uint32_t), stream_);
 
     const dim3 threads(16, 16);
     const dim3 blocks((width + 15) / 16, (height + 15) / 16);
 
-    convertPointCloud2WithRingKernel<<<blocks, threads, 0, stream_>>>(
-        d_input_,
-        thrust::raw_pointer_cast(d_out.data()),
-        thrust::raw_pointer_cast(d_ring_.data()),
-        d_count_,
-        width, height,
-        row_step, point_step);
+    if (filter_zeros_) {
+        cudaMemsetAsync(d_count_, 0, sizeof(std::uint32_t), stream_);
+        convertPointCloud2WithRingKernel<true><<<blocks, threads, 0, stream_>>>(
+            d_input_,
+            thrust::raw_pointer_cast(d_out.data()),
+            thrust::raw_pointer_cast(d_ring_.data()),
+            d_count_,
+            width, height,
+            row_step, point_step);
 
-    std::uint32_t h_count = 0;
-    cudaMemcpyAsync(&h_count, d_count_, sizeof(std::uint32_t),
-                    cudaMemcpyDeviceToHost, stream_);
-    cudaStreamSynchronize(stream_);
-
-    return static_cast<unsigned int>(h_count);
+        std::uint32_t h_count = 0;
+        cudaMemcpyAsync(&h_count, d_count_, sizeof(std::uint32_t),
+                        cudaMemcpyDeviceToHost, stream_);
+        cudaStreamSynchronize(stream_);
+        return static_cast<unsigned int>(h_count);
+    } else {
+        convertPointCloud2WithRingKernel<false><<<blocks, threads, 0, stream_>>>(
+            d_input_,
+            thrust::raw_pointer_cast(d_out.data()),
+            thrust::raw_pointer_cast(d_ring_.data()),
+            d_count_,
+            width, height,
+            row_step, point_step);
+            
+        cudaStreamSynchronize(stream_);
+        return static_cast<unsigned int>(width * height);
+    }
 }

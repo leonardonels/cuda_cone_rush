@@ -13,6 +13,8 @@ public:
     CudaRingConverter();
     ~CudaRingConverter() override;
 
+    explicit CudaRingConverter(bool filter_zeros = false);
+
     CudaRingConverter(const CudaRingConverter&)            = delete;
     CudaRingConverter& operator=(const CudaRingConverter&) = delete;
 
@@ -27,6 +29,8 @@ private:
     std::uint32_t* d_count_      = nullptr;
     std::size_t    input_bytes_  = 0;
     cudaStream_t   stream_       = nullptr;
+
+    bool filter_zeros_;
 
     thrust::device_vector<float> d_ring_;
 

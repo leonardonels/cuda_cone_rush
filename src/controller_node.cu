@@ -1,6 +1,7 @@
 #include "cuda_cone_rush/controller_node.hpp"
 
 #include <csignal>
+#include <memory>
 
 ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 {
@@ -9,31 +10,31 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 
     /* Select converter (factory) */
     if (ring_pipeline_) {
-        this->converter_ = new CudaRingConverter();
+        this->converter_ = std::make_unique<CudaRingConverter>(this->zeros_removal_);
     } else {
-        this->converter_ = new CudaConverter();
+        this->converter_ = std::make_unique<CudaConverter>(this->zeros_removal_);
     }
 
     /* Select filtering class (factory) */
     if (ring_pipeline_) {
-        this->cudaFilter = new CudaRingFilter(upFilterLimitX, downFilterLimitX,
+        this->cudaFilter_ = std::make_unique<CudaRingFilter>(upFilterLimitX, downFilterLimitX,
                                        upFilterLimitY, downFilterLimitY,
                                        upFilterLimitZ, downFilterLimitZ);
     } else {
-        this->cudaFilter = new CudaFilter(upFilterLimitX, downFilterLimitX,
+        this->cudaFilter_ = std::make_unique<CudaFilter>(upFilterLimitX, downFilterLimitX,
                                        upFilterLimitY, downFilterLimitY,
                                        upFilterLimitZ, downFilterLimitZ);
     }
 
     /* Select segmentation class (factory) */
     if (ring_pipeline_) {
-        this->segmentation = new CudaRingSegmentation(segP);
+        this->segmentation_ = std::make_unique<CudaRingSegmentation>(segP);
     } else {
-        this->segmentation = new CudaSegmentation(segP);
+        this->segmentation_ = std::make_unique<CudaSegmentation>(segP);
     }
 
     /* Select clustering class */
-    this->clustering = new CudaClustering(param);
+    this->clustering_ = std::make_unique<CudaClustering>(param);
 
 #ifdef ENABLE_BARQ
     if (this->barq_enabled_) {
@@ -73,11 +74,6 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 
 ControllerNode::~ControllerNode()
 {
-    delete this->converter_;
-    delete this->segmentation;
-    delete this->cudaFilter;
-    delete this->clustering;
-
     if (copy_stream) cudaStreamDestroy(copy_stream);
     if (compute_stream) cudaStreamDestroy(compute_stream);
 }
@@ -150,6 +146,7 @@ void ControllerNode::loadParameters()
     
     // ================ Pipeline options =================
     declare_parameter("ring_pipeline", false);
+    declare_parameter("zeros-removal", false);
     declare_parameter("filter", false);
     declare_parameter("segment", false);
     declare_parameter("clustering", true);
@@ -218,6 +215,7 @@ void ControllerNode::loadParameters()
 
     // ================ Pipeline options =================
     get_parameter("ring_pipeline", this->ring_pipeline_);
+    get_parameter("zeros-removal", this->zeros_removal_);
     get_parameter("filter", this->filterFlag);
     get_parameter("segment", this->segmentFlag);
     get_parameter("clustering", this->clusteringFlag);
@@ -456,7 +454,7 @@ void ControllerNode::onTimer()
         std::memcpy(&y, p + 4, sizeof(float));
         std::memcpy(&z, p + 8, sizeof(float));
 
-        if (x == 0.0f && y == 0.0f && z == 0.0f) continue;
+        if (this->zeros_removal_ && x == 0.0f && y == 0.0f && z == 0.0f) continue;
 
         h_input[validCount*4+0] = x;
         h_input[validCount*4+1] = y;
@@ -506,7 +504,7 @@ void ControllerNode::runPipeline(unsigned int inputSize)
             ring_ptr = thrust::raw_pointer_cast(d_ring_barq_.data());
         } else {
 #endif
-            auto* rc = static_cast<CudaRingConverter*>(converter_);
+            auto* rc = static_cast<CudaRingConverter*>(converter_.get());
             ring_ptr = rc->getRingPtr();
 #ifdef ENABLE_BARQ
         }
@@ -521,17 +519,17 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         raw_out = thrust::raw_pointer_cast(d_output.data());
 
         if (ring_pipeline_ && ring_ptr) {
-            static_cast<CudaRingFilter*>(cudaFilter)->setRingInput(ring_ptr, inputSize);
+            static_cast<CudaRingFilter*>(cudaFilter_.get())->setRingInput(ring_ptr, inputSize);
         }
 
-        this->cudaFilter->filterPoints(raw_in, inputSize, &raw_out, &size, compute_stream);
+        this->cudaFilter_->filterPoints(raw_in, inputSize, &raw_out, &size, compute_stream);
         inputSize = size;
 
         // after the swap d_input holds the filtered result
         d_input.swap(d_output);
 
         if (ring_pipeline_) {
-            ring_ptr = static_cast<CudaRingFilter*>(cudaFilter)->getRingOutput();
+            ring_ptr = static_cast<CudaRingFilter*>(cudaFilter_.get())->getRingOutput();
         }
 
         if (this->publishFilteredPc) {
@@ -551,17 +549,17 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         raw_out = thrust::raw_pointer_cast(d_output.data());
 
         if (ring_pipeline_ && ring_ptr) {
-            static_cast<CudaRingSegmentation*>(segmentation)->setRingInput(ring_ptr, inputSize);
+            static_cast<CudaRingSegmentation*>(segmentation_.get())->setRingInput(ring_ptr, inputSize);
         }
 
-        segmentation->segment(raw_in, inputSize, raw_out, &size, compute_stream);
+        segmentation_->segment(raw_in, inputSize, raw_out, &size, compute_stream);
         inputSize = size;
 
         // after the swap d_input holds the segmented result
         d_input.swap(d_output);
 
         if (ring_pipeline_) {
-            ring_ptr = static_cast<CudaRingSegmentation*>(segmentation)->getRingOutput();
+            ring_ptr = static_cast<CudaRingSegmentation*>(segmentation_.get())->getRingOutput();
         }
 
         if (this->publishSegmentedPc && size != 0) {
@@ -580,7 +578,7 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         raw_in  = thrust::raw_pointer_cast(d_input.data());
         raw_out = thrust::raw_pointer_cast(d_output.data());
 
-        this->clustering->extractClusters(raw_in, inputSize, raw_out, cones, compute_stream);
+        this->clustering_->extractClusters(raw_in, inputSize, raw_out, cones, compute_stream);
 
 #if defined(ENABLE_VERBOSE) || defined(LOGGER_PUB)
         auto tend = std::chrono::steady_clock::now();

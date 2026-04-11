@@ -18,6 +18,7 @@
 
     # ================ Pipeline options =================
     ring_pipeline: false    # Work In Progress
+    zeros-removal: false
     filter: true
     segment: true
     clustering: true

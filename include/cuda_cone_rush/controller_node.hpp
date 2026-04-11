@@ -46,6 +46,7 @@ private:
         std::shared_ptr<visualization_msgs::msg::Marker> cones{new visualization_msgs::msg::Marker()};
         std::string input_topic, segmented_topic, filtered_topic, cluster_topic, frame_id;
         bool filterFlag, clusteringFlag, segmentFlag, publishFilteredPc, publishSegmentedPc, publishCluster;
+        bool zeros_removal_, ring_pipeline_ = false;
         float downFilterLimitX, upFilterLimitX;
         float downFilterLimitY, upFilterLimitY;
         float downFilterLimitZ, upFilterLimitZ;
@@ -91,12 +92,10 @@ private:
         cudaStream_t compute_stream = NULL;
         cudaStream_t copy_stream = NULL;
 
-        IConverter *converter_;
-        bool ring_pipeline_ = false;
-
-        IFilter *cudaFilter;
-        IClustering *clustering;
-        Isegmentation *segmentation;
+        std::unique_ptr<IConverter> converter_;
+        std::unique_ptr<IFilter> cudaFilter_;
+        std::unique_ptr<Isegmentation> segmentation_;
+        std::unique_ptr<IClustering> clustering_;
 
         /* Subscriber */
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub;

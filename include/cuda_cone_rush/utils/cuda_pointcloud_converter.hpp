@@ -13,6 +13,8 @@ public:
     CudaConverter();
     ~CudaConverter() override;
 
+    explicit CudaConverter(bool filter_zeros_ = false);
+
     CudaConverter(const CudaConverter&)            = delete;
     CudaConverter& operator=(const CudaConverter&) = delete;
 
@@ -24,6 +26,8 @@ private:
     std::uint32_t* d_count_      = nullptr;
     std::size_t    input_bytes_  = 0;
     cudaStream_t   stream_       = nullptr;
+    
+    bool filter_zeros_;
 
     void reserve(std::size_t in_bytes);
 };

@@ -9,6 +9,8 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend condition="$ENABLE_BARQ == 1">barq</build_depend>
+  <build_depend condition="$RMW_FASTRTPS_USE_QOS_FROM_XML == 1">mmr_base</build_depend>
+
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

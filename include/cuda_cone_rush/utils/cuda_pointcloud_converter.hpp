@@ -13,21 +13,21 @@ public:
     CudaConverter();
     ~CudaConverter() override;
 
-    explicit CudaConverter(bool filter_zeros_ = false);
-
     CudaConverter(const CudaConverter&)            = delete;
     CudaConverter& operator=(const CudaConverter&) = delete;
 
     unsigned int convert(const sensor_msgs::msg::PointCloud2::SharedPtr& sub_cloud,
                          thrust::device_vector<float>& d_out) override;
 
+    unsigned int convert(const std::uint8_t* data, std::size_t in_bytes,
+                         std::uint32_t width, std::uint32_t height,
+                         std::uint32_t row_step, std::uint32_t point_step,
+                         thrust::device_vector<float>& d_out) override;
+
 private:
     std::uint8_t*  d_input_      = nullptr;
-    std::uint32_t* d_count_      = nullptr;
     std::size_t    input_bytes_  = 0;
     cudaStream_t   stream_       = nullptr;
-    
-    bool filter_zeros_;
 
     void reserve(std::size_t in_bytes);
 };

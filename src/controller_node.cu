@@ -2,55 +2,54 @@
 
 #include <csignal>
 #include <memory>
+#include <cstdint>
 
 ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 {
     this->loadParameters();
     this->getInfo();
+    this->MessageInit();
 
-    /* Select converter (factory) */
-    if (ring_pipeline_) {
-        this->converter_ = std::make_unique<CudaRingConverter>(this->zeros_removal_);
-    } else {
-        this->converter_ = std::make_unique<CudaConverter>(this->zeros_removal_);
-    }
+    this->converter_ = std::make_unique<CudaConverter>();
 
-    /* Select filtering class (factory) */
-    if (ring_pipeline_) {
-        this->cudaFilter_ = std::make_unique<CudaRingFilter>(upFilterLimitX, downFilterLimitX,
-                                       upFilterLimitY, downFilterLimitY,
-                                       upFilterLimitZ, downFilterLimitZ);
-    } else {
-        this->cudaFilter_ = std::make_unique<CudaFilter>(upFilterLimitX, downFilterLimitX,
-                                       upFilterLimitY, downFilterLimitY,
-                                       upFilterLimitZ, downFilterLimitZ);
-    }
+    this->cudaFilter_ = std::make_unique<CudaFilter>(upFilterLimitX, downFilterLimitX,
+                                   upFilterLimitY, downFilterLimitY,
+                                   upFilterLimitZ, downFilterLimitZ);
 
-    /* Select segmentation class (factory) */
-    if (ring_pipeline_) {
-        this->segmentation_ = std::make_unique<CudaRingSegmentation>(segP);
-    } else {
-        this->segmentation_ = std::make_unique<CudaSegmentation>(segP);
-    }
+    this->segmentation_ = std::make_unique<CudaSegmentation>(segP);
 
-    /* Select clustering class */
     this->clustering_ = std::make_unique<CudaClustering>(param);
 
 #ifdef ENABLE_BARQ
     if (this->barq_enabled_) {
+
         /* Create BARQ subscriber */
         this->BARQReaderInit();
     }
 #else
     this->ROSListenerInit();
 #endif
-    this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
+
+    if(this->clusteringFlag && this->publishCluster)
+        this->cones_array_pub = this->create_publisher<visualization_msgs::msg::Marker>(this->cluster_topic, 100);
     if(this->filterFlag && this->publishFilteredPc)
         this->filtered_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->filtered_topic, 100);
     if(this->segmentFlag && this->publishSegmentedPc)
         this->segmented_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->segmented_topic, 100);
                                                                                
-    /* Cones topic init */
+    /* Cuda streams init*/
+    cudaStreamCreate(&copy_stream);
+    cudaStreamCreate(&compute_stream);
+}
+
+ControllerNode::~ControllerNode()
+{
+    if (copy_stream) cudaStreamDestroy(copy_stream);
+    if (compute_stream) cudaStreamDestroy(compute_stream);
+}
+
+void ControllerNode::MessageInit()
+{
     cones->header.frame_id = this->frame_id;
     cones->ns = "ListaConiRilevati";
     cones->type = visualization_msgs::msg::Marker::SPHERE_LIST;
@@ -66,16 +65,6 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
     cones->pose.orientation.y = 0.0;
     cones->pose.orientation.z = 0.0;
     cones->pose.orientation.w = 1.0;
-
-    /* Cuda streams init*/
-    cudaStreamCreate(&copy_stream);
-    cudaStreamCreate(&compute_stream);
-}
-
-ControllerNode::~ControllerNode()
-{
-    if (copy_stream) cudaStreamDestroy(copy_stream);
-    if (compute_stream) cudaStreamDestroy(compute_stream);
 }
 
 void ControllerNode::ROSListenerInit(){
@@ -84,9 +73,19 @@ void ControllerNode::ROSListenerInit(){
     // qos.keep_last(10);
         
     /* Create ROS2 subscriber */
-    this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
-                                                                                   std::bind(&ControllerNode::scanCallback, this, std::placeholders::_1));
-    RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Subscribed to topic: %s", this->input_topic.c_str());
+#ifdef ENABLE_ZERO_COPY
+    if(this->zero_copy_enabled){
+        this->bounded_sub = this->create_subscription<mmr_base::msg::BoundedPointcloud>(this->input_topic, qos,
+                                                                                       std::bind(&ControllerNode::boundedPointcloud, this, std::placeholders::_1));
+        RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Subscribed to bounded topic: %s", this->input_topic.c_str());
+    }else{
+#endif
+        this->cloud_sub = this->create_subscription<sensor_msgs::msg::PointCloud2>(this->input_topic, qos,
+                                                                                       std::bind(&ControllerNode::standardPointcloud, this, std::placeholders::_1));
+        RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "Subscribed to topic: %s", this->input_topic.c_str());
+#ifdef ENABLE_ZERO_COPY
+    }
+#endif
 }
 
 #ifdef ENABLE_BARQ
@@ -133,6 +132,9 @@ void ControllerNode::loadParameters()
     declare_parameter("filtered_topic", "/filtered_points");
     declare_parameter("cluster_topic", "/clusters");
     declare_parameter("frame_id", "hesai_lidar");
+
+    // ================ Zero Copy options =================
+    declare_parameter("zero_copy_enabled", true);
     
     // ================ BARQ options =================
     declare_parameter("BARQ_enabled", false);
@@ -145,8 +147,6 @@ void ControllerNode::loadParameters()
 #endif
     
     // ================ Pipeline options =================
-    declare_parameter("ring_pipeline", false);
-    declare_parameter("zeros-removal", false);
     declare_parameter("filter", false);
     declare_parameter("segment", false);
     declare_parameter("clustering", true);
@@ -176,9 +176,7 @@ void ControllerNode::loadParameters()
     declare_parameter("maxSegmentationDistance", 20.0);
     declare_parameter("maxIterations", 80);
     declare_parameter("probability", 0.75);
-    declare_parameter("ring_group_boundaries",
-                      std::vector<int64_t>{0, 32, 64, 96, 128});
-    
+
     // ================ Clustering options =================
     declare_parameter("minClusterSize", 1);
     declare_parameter("maxClusterSize", 500);
@@ -203,6 +201,9 @@ void ControllerNode::loadParameters()
     get_parameter("cluster_topic", this->cluster_topic);
     get_parameter("frame_id", this->frame_id);
 
+    // ================ Zero Copy options =================
+    get_parameter("zero_copy_enabled", this->zero_copy_enabled);
+
     // ================ BARQ options =================
     get_parameter("BARQ_enabled", this->barq_enabled_);
 #ifdef ENABLE_BARQ
@@ -214,8 +215,6 @@ void ControllerNode::loadParameters()
 #endif
 
     // ================ Pipeline options =================
-    get_parameter("ring_pipeline", this->ring_pipeline_);
-    get_parameter("zeros-removal", this->zeros_removal_);
     get_parameter("filter", this->filterFlag);
     get_parameter("segment", this->segmentFlag);
     get_parameter("clustering", this->clusteringFlag);
@@ -245,12 +244,7 @@ void ControllerNode::loadParameters()
     get_parameter("maxSegmentationDistance", this->segP.maxSegmentationDistance);
     get_parameter("maxIterations", this->segP.maxIterations);
     get_parameter("probability", this->segP.probability);
-    {
-        std::vector<int64_t> rgb_i64;
-        get_parameter("ring_group_boundaries", rgb_i64);
-        segP.ringGroupBoundaries.assign(rgb_i64.begin(), rgb_i64.end());
-    }
-    
+
     // ================ Clustering options =================
     get_parameter("minClusterSize", this->param.clustering.minClusterSize);
     get_parameter("maxClusterSize", this->param.clustering.maxClusterSize);
@@ -336,8 +330,7 @@ void ControllerNode::reserveAndResize(size_t totalElements)
     d_output.resize(totalElements);
 }
 
-// ROS2 Entry point for PointCloud2 subscriber callback — not used with BARQ
-void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud)
+void ControllerNode::standardPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud)
 {
 #ifdef LATENCY_TESTING
     auto now = rclcpp::Clock(RCL_ROS_TIME).now();
@@ -347,7 +340,7 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
 #endif
 
     unsigned int inputSize = sub_cloud->width * sub_cloud->height;
-    size_t totalElements = inputSize * 4;
+    size_t totalElements = inputSize * 4;   // XYZI
 
     reserveAndResize(totalElements);
 
@@ -355,6 +348,30 @@ void ControllerNode::scanCallback(sensor_msgs::msg::PointCloud2::SharedPtr sub_c
 
     runPipeline(inputSize);
 }
+
+#ifdef ENABLE_ZERO_COPY
+void ControllerNode::boundedPointcloud(mmr_base::msg::BoundedPointcloud::SharedPtr sub_cloud)
+{
+#ifdef LATENCY_TESTING
+    auto now = rclcpp::Clock(RCL_ROS_TIME).now();
+    auto timestamp = sub_cloud->header.stamp;
+    auto latency = (now - timestamp).nanoseconds() / 1e6;
+    std::cout << "ROS2 latency: " << latency << " ms" << std::endl;
+#endif
+
+    unsigned int inputSize = sub_cloud->width;
+    size_t totalElements = inputSize * 4;   // XYZI
+
+    reserveAndResize(totalElements);
+
+    inputSize = converter_->convert(sub_cloud->data.data(), sub_cloud->data.size(),
+                                    sub_cloud->width, std::uint32_t(1),
+                                    std::uint32_t(26)*sub_cloud->width, std::uint32_t(26),
+                                    d_input);
+
+    runPipeline(inputSize);
+}
+#endif
 
 #ifdef ENABLE_BARQ
 /**
@@ -416,16 +433,6 @@ void ControllerNode::onTimer()
     std::memcpy(&point_step, buf + off, sizeof(point_step)); off += sizeof(point_step);
     std::memcpy(&timestamp,  buf + off, sizeof(timestamp));  off += sizeof(timestamp);
 
-/**
- * This timestamp confirms the exact same result as before, so not useful to add the BARQ header parsing time to the overall latency study
- * 
- #ifdef LATENCY_TESTING
- const double header_ms = static_cast<double>(now_ns - ts) / 1e6;
- std::cout << "BARQ header parsing latency: " << header_ms << " ms" << std::endl;
- #endif
- *
- */
-
     const uint8_t* points = buf + off;
     
 #ifdef ENABLE_VERBOSE
@@ -441,47 +448,13 @@ void ControllerNode::onTimer()
 
     reserveAndResize(totalElements);
 
-    if (ring_pipeline_) {
-        h_ring_barq_.resize(width);
-    }
+    inputSize = converter_->convert(points, static_cast<size_t>(width) * point_step,
+                                    width, 1, width * point_step, point_step, d_input);
 
-    unsigned int validCount = 0;
-    for (uint32_t i = 0; i < width; ++i) {
-        const uint8_t* p = points + i * point_step;
-
-        float x, y, z;
-        std::memcpy(&x, p,     sizeof(float));
-        std::memcpy(&y, p + 4, sizeof(float));
-        std::memcpy(&z, p + 8, sizeof(float));
-
-        if (this->zeros_removal_ && x == 0.0f && y == 0.0f && z == 0.0f) continue;
-
-        h_input[validCount*4+0] = x;
-        h_input[validCount*4+1] = y;
-        h_input[validCount*4+2] = z;
-        std::memcpy(&h_input[validCount*4+3], p+12, sizeof(float));
-
-        if (ring_pipeline_) {
-            uint16_t ring;
-            std::memcpy(&ring, p + 16, sizeof(uint16_t));
-            h_ring_barq_[validCount] = static_cast<float>(ring);
-        }
-        validCount++;
-    }
-
-    h_input.resize(validCount * 4);
-    d_input = h_input;
-
-    if (ring_pipeline_) {
-        h_ring_barq_.resize(validCount);
-        d_ring_barq_ = h_ring_barq_;
-    }
-
-    runPipeline(validCount);
+    runPipeline(inputSize);
 }
 #endif
 
-// Extracted from scanCallback and onTimer since ROS2 and BARQ share the same processing pipeline after input conversion
 void ControllerNode::runPipeline(unsigned int inputSize)
 {
 #if defined(ENABLE_VERBOSE)
@@ -496,21 +469,6 @@ void ControllerNode::runPipeline(unsigned int inputSize)
     float* raw_in  = nullptr;
     float* raw_out = nullptr;
 
-    // ring pointer tracks ring data through the pipeline (only used when ring_pipeline_)
-    float* ring_ptr = nullptr;
-    if (ring_pipeline_) {
-#ifdef ENABLE_BARQ
-        if (barq_enabled_) {
-            ring_ptr = thrust::raw_pointer_cast(d_ring_barq_.data());
-        } else {
-#endif
-            auto* rc = static_cast<CudaRingConverter*>(converter_.get());
-            ring_ptr = rc->getRingPtr();
-#ifdef ENABLE_BARQ
-        }
-#endif
-    }
-
     // -----------------------------------------
     // CUDA Filtering (if enabled)
     // -----------------------------------------
@@ -518,19 +476,11 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         raw_in  = thrust::raw_pointer_cast(d_input.data());
         raw_out = thrust::raw_pointer_cast(d_output.data());
 
-        if (ring_pipeline_ && ring_ptr) {
-            static_cast<CudaRingFilter*>(cudaFilter_.get())->setRingInput(ring_ptr, inputSize);
-        }
-
         this->cudaFilter_->filterPoints(raw_in, inputSize, &raw_out, &size, compute_stream);
         inputSize = size;
 
         // after the swap d_input holds the filtered result
         d_input.swap(d_output);
-
-        if (ring_pipeline_) {
-            ring_ptr = static_cast<CudaRingFilter*>(cudaFilter_.get())->getRingOutput();
-        }
 
         if (this->publishFilteredPc) {
             cudaMemcpyAsync(h_input.data(),
@@ -548,19 +498,11 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         raw_in  = thrust::raw_pointer_cast(d_input.data());
         raw_out = thrust::raw_pointer_cast(d_output.data());
 
-        if (ring_pipeline_ && ring_ptr) {
-            static_cast<CudaRingSegmentation*>(segmentation_.get())->setRingInput(ring_ptr, inputSize);
-        }
-
         segmentation_->segment(raw_in, inputSize, raw_out, &size, compute_stream);
         inputSize = size;
 
         // after the swap d_input holds the segmented result
         d_input.swap(d_output);
-
-        if (ring_pipeline_) {
-            ring_ptr = static_cast<CudaRingSegmentation*>(segmentation_.get())->getRingOutput();
-        }
 
         if (this->publishSegmentedPc && size != 0) {
             cudaMemcpyAsync(h_input.data(),

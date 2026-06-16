@@ -82,7 +82,7 @@ __global__ void ransacPlaneKernel(
     float p3[3] = {points[idx3*4], points[idx3*4+1], points[idx3*4+2]};
 
     // look for planes only near the sensor (optional heuristic to improve speed and robustness)
-    if (p1[0]*p1[0] + p1[1]*p1[1] + p1[2]*p1[2] > (float)max_segmentation_distance) {   // only consider points within maxSegmentationDistance from the sensor
+    if (p1[0]*p1[0] + p1[1]*p1[1] + p1[2]*p1[2] > float(max_segmentation_distance*max_segmentation_distance)) {   // only consider points within maxSegmentationDistance from the sensor
         if (threadIdx.x == 0) {
             plane_inliers_counts[iter] = -1; // mark as invalid
         }

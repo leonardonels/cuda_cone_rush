@@ -8,7 +8,18 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra)
 endif()
 
+set(CUDA_CONE_RUSH_CUDA_ARCH "87" CACHE STRING "CUDA arch for the GPU backend (Orin = 87)")
+
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+  set(CMAKE_CUDA_ARCHITECTURES ${CUDA_CONE_RUSH_CUDA_ARCH})
+endif()
+
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+endif()
+
 option(ENABLE_BARQ "Enable BARQ for high-performance packet processing" OFF)
+option(ENABLE_ZERO_COPY "Enable Zero Copy for ROS2 low latency comunication" OFF)
 option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
 option(LATENCY_TESTING "Print latency information for each BARQ callback" OFF)
 option(NSIGHT_SDK "Set an execution limit for NVIDIA Nsight Systems profiling" OFF)
@@ -52,6 +63,10 @@ if($ENV{ENABLE_BARQ})
   set(ENABLE_BARQ ON)
 endif()
 
+if($ENV{RMW_FASTRTPS_USE_QOS_FROM_XML})
+  set(ENABLE_ZERO_COPY ON)
+endif()
+
 if(ENABLE_BARQ)
   find_package(barq QUIET)
   if (NOT barq_FOUND)
@@ -64,7 +79,7 @@ if(ENABLE_BARQ)
       "    git clone https://github.com/leonardonels/barq.git\n"
       "    cd ~/ros2_ws && colcon build\n"
       "Then rebuild this package with:\n"
-      "    cd ~/ros2_ws && ENABLE_BARQ=1 colcon build --packages-up-to hesai_ros_driver --cmake-args -DCMAKE_BUILD_TYPE=Release\n"
+      "    cd ~/ros2_ws && ENABLE_BARQ=1 colcon build --packages-up-to cuda_cone_rush --cmake-args -DCMAKE_BUILD_TYPE=Release\n"
       "============================================================\n"
     )
   endif()
@@ -77,9 +92,27 @@ if(ENABLE_BARQ)
 else()
   message( 
     "============================================================\n"
-    "-- BARQ is DISABLED - IF YOU WANT TO ENABLE BARQ, PLEASE SET ENV ENABLE_BARQ=1 BEFORE BUILDING THIS PACKAGE\n"
+    "-- BARQ is DISABLED - PLEASE SET ENV ENABLE_BARQ=1 BEFORE BUILDING TO USE BARQ\n"
     "============================================================\n"
   )
+endif()
+
+if(ENABLE_ZERO_COPY)
+  find_package(mmr_base QUIET)
+  if (mmr_base_FOUND)
+    message(
+      "============================================================\n"
+      "-- ZERO COPY is ENABLED\n"
+      "============================================================\n"
+    )
+  else()
+    message(
+      "============================================================\n"
+      "-- ZERO COPY is DISABLED - PLEASE SET ENV RMW_FASTRTPS_USE_QOS_FROM_XML=1 BEFORE BUILDING TO USE ZERO COPY\n"
+      "============================================================\n"
+    )
+  endif()
+  add_definitions(-DENABLE_ZERO_COPY)
 endif()
 
 #set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-12.8")
@@ -126,9 +159,6 @@ target_link_libraries(cuda_cone_rush_node
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
-  cuda_ring_converter
-  cuda_ring_filter
-  cuda_ring_segmentation
 )
 target_include_directories(cuda_cone_rush_node PUBLIC include)
 
@@ -145,25 +175,6 @@ target_compile_options(pointcloud_converter PRIVATE
 target_include_directories(pointcloud_converter PUBLIC include)
 ament_target_dependencies(pointcloud_converter
   sensor_msgs
-)
-
-# Ring-aware pipeline libraries
-add_library(cuda_ring_converter src/utils/cuda_ring_converter.cu)
-target_include_directories(cuda_ring_converter PUBLIC include)
-ament_target_dependencies(cuda_ring_converter
-  sensor_msgs
-)
-
-add_library(cuda_ring_filter src/filtering/cuda_ring_filter.cu)
-target_include_directories(cuda_ring_filter PUBLIC include)
-ament_target_dependencies(cuda_ring_filter
-  rclcpp
-)
-
-add_library(cuda_ring_segmentation src/segmentation/cuda_ring_segmentation.cu)
-target_include_directories(cuda_ring_segmentation PUBLIC include)
-ament_target_dependencies(cuda_ring_segmentation
-  rclcpp
 )
 
 ament_target_dependencies(cluster_filtering
@@ -188,11 +199,27 @@ target_link_libraries(${PROJECT_NAME}
   cuda_filtering
   cuda_segmentation
   pointcloud_converter
-  cuda_ring_converter
-  cuda_ring_filter
-  cuda_ring_segmentation
 )
-if(barq_FOUND)
+if(barq_FOUND AND mmr_base_FOUND)
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  sensor_msgs
+  visualization_msgs
+  pcl_conversions
+  PCL
+  barq
+  mmr_base
+)
+elseif(NOT barq_FOUND AND mmr_base_FOUND)
+ament_target_dependencies(${PROJECT_NAME}
+  rclcpp
+  sensor_msgs
+  visualization_msgs
+  pcl_conversions
+  PCL
+  mmr_base
+)
+elseif(barq_FOUND AND NOT mmr_base_FOUND)
 ament_target_dependencies(${PROJECT_NAME}
   rclcpp
   sensor_msgs
@@ -208,6 +235,7 @@ ament_target_dependencies(${PROJECT_NAME}
   visualization_msgs
   pcl_conversions
   PCL
+  mmr_base
 )
 endif()
 

@@ -10,9 +10,6 @@
 
 #include "cuda_cone_rush/utils/iconverter.hpp"
 #include "cuda_cone_rush/utils/cuda_pointcloud_converter.hpp"
-#include "cuda_cone_rush/utils/cuda_ring_converter.hpp"
-#include "cuda_cone_rush/filtering/cuda_ring_filter.hpp"
-#include "cuda_cone_rush/segmentation/cuda_ring_segmentation.hpp"
 
 #include <cuda_runtime.h>
 #include <thrust/memory.h>
@@ -40,13 +37,16 @@ using pinned_host_vector = thrust::host_vector<T>;
 #endif
 #include <pcl_conversions/pcl_conversions.h>
 
+#ifdef ENABLE_ZERO_COPY
+#include <mmr_base/msg/bounded_pointcloud.hpp>
+#endif
+
 class ControllerNode : public rclcpp::Node
 {
 private:
         std::shared_ptr<visualization_msgs::msg::Marker> cones{new visualization_msgs::msg::Marker()};
         std::string input_topic, segmented_topic, filtered_topic, cluster_topic, frame_id;
         bool filterFlag, clusteringFlag, segmentFlag, publishFilteredPc, publishSegmentedPc, publishCluster;
-        bool zeros_removal_, ring_pipeline_ = false;
         float downFilterLimitX, upFilterLimitX;
         float downFilterLimitY, upFilterLimitY;
         float downFilterLimitZ, upFilterLimitZ;
@@ -76,10 +76,11 @@ private:
         int barq_polling_rate_ms_ = 16;  // default to ~60Hz
         int barq_writer_timeout_ms_ = 1000; // timeout for writer health check
         int64_t last_barq_timestamp_ns_ = 0;
-        pinned_host_vector<float> h_ring_barq_;
-        thrust::device_vector<float> d_ring_barq_;
         bool barq_initialized_ = false;
         #endif
+
+        // Zero Copy
+        bool zero_copy_enabled;
 
         // ---------------------------------------------------------------------------
         // using pinned host memory instead of heap-allocated memory
@@ -99,6 +100,9 @@ private:
 
         /* Subscriber */
         rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub;
+        #ifdef ENABLE_ZERO_COPY
+        rclcpp::Subscription<mmr_base::msg::BoundedPointcloud>::SharedPtr bounded_sub;
+        #endif
 
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr cones_array_pub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cp_pub;
@@ -106,6 +110,9 @@ private:
 
         /* Load parameters function */
         void loadParameters();
+
+        /* Cones topic init */
+        void MessageInit();
         
         /* Initialize ROS2 listener */
         void ROSListenerInit();
@@ -121,8 +128,12 @@ private:
         /* Reserve and resize memory before processing */
         void reserveAndResize(size_t inputSize);
 
-        /* PointCloud Callback - ROS2 entry point */
-        void scanCallback(const sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud);
+        /* PointCloud Callbacks - ROS2 entry point */
+        void standardPointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud);      // std
+
+        #ifdef ENABLE_ZERO_COPY
+        void boundedPointcloud(const mmr_base::msg::BoundedPointcloud::SharedPtr sub_cloud);    // zero copy
+        #endif
 
         #ifdef ENABLE_BARQ
         /* Timer callback - BARQ entry point */

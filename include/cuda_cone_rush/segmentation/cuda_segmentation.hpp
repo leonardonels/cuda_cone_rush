@@ -14,7 +14,6 @@ typedef struct
     double probability;
     double maxSegmentationDistance; // new parameter to limit how far points can be from the sensor for plane fitting
     bool optimizeCoefficients;
-    std::vector<int> ringGroupBoundaries; // e.g. {0, 32, 64, 96, 128} → 4 ring groups
 } segParam_t;
 
 class CudaSegmentation : public Isegmentation

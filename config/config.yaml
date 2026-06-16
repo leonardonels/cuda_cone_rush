@@ -8,6 +8,9 @@
     cluster_topic: /clusters
     frame_id: "hesai_lidar"
 
+    # ================ Zero Copy options =================
+    zero_copy_enabled: true
+
     # ================ BARQ options =================
     BARQ_enabled: true      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
     BARQ_topic: /lidar_points
@@ -17,8 +20,6 @@
     BARQ_writer_timeout_ms: 1000  # Time in ms to check if the writer is alive
 
     # ================ Pipeline options =================
-    ring_pipeline: false    # Work In Progress
-    zeros-removal: false
     filter: true
     segment: true
     clustering: true
@@ -41,7 +42,7 @@
 
     # ================ Segmentation options =================
     distanceThreshold: 0.1            # from the plane
-    maxSegmentationDistance: 2000.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
+    maxSegmentationDistance: 20.0        # how far the random points can be from the car to be considered for plane fitting (in meters)
     maxIterations: 80                 # by requiring the plane to be found form 3 points close to the car the max number of iterations can be reduce to 1/3
     probability: 0.75
     

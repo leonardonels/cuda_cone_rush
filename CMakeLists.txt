@@ -200,44 +200,24 @@ target_link_libraries(${PROJECT_NAME}
   cuda_segmentation
   pointcloud_converter
 )
-if(barq_FOUND AND mmr_base_FOUND)
-ament_target_dependencies(${PROJECT_NAME}
+
+set(NODE_DEPENDENCIES
   rclcpp
   sensor_msgs
   visualization_msgs
   pcl_conversions
   PCL
-  barq
-  mmr_base
 )
-elseif(NOT barq_FOUND AND mmr_base_FOUND)
-ament_target_dependencies(${PROJECT_NAME}
-  rclcpp
-  sensor_msgs
-  visualization_msgs
-  pcl_conversions
-  PCL
-  mmr_base
-)
-elseif(barq_FOUND AND NOT mmr_base_FOUND)
-ament_target_dependencies(${PROJECT_NAME}
-  rclcpp
-  sensor_msgs
-  visualization_msgs
-  pcl_conversions
-  PCL
-  barq
-)
-else()
-ament_target_dependencies(${PROJECT_NAME}
-  rclcpp
-  sensor_msgs
-  visualization_msgs
-  pcl_conversions
-  PCL
-  mmr_base
-)
+
+if(barq_FOUND)
+  list(APPEND NODE_DEPENDENCIES "barq")
 endif()
+
+if(mmr_base_FOUND)
+  list(APPEND NODE_DEPENDENCIES "mmr_base")
+endif()
+
+ament_target_dependencies(cuda_cone_rush ${NODE_DEPENDENCIES})
 
 target_link_libraries(${PROJECT_NAME}_node 
   ${PROJECT_NAME}

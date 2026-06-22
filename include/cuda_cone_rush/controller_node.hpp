@@ -22,9 +22,23 @@
 #endif
 
 #ifdef USE_PINNED_MEMORY
+#include <thrust/version.h>
+#if THRUST_VERSION >= 300000
+// CUDA 13 / CCCL >= 3.0: experimental/pinned_allocator.h was removed.
+// Use the memory-resource based pinned allocator instead.
+#include <thrust/mr/allocator.h>
+#include <thrust/system/cuda/memory_resource.h>
+template <typename T>
+using pinned_host_vector = thrust::host_vector<
+    T,
+    thrust::mr::stateless_resource_allocator<
+        T, thrust::system::cuda::universal_host_pinned_memory_resource>>;
+#else
+// CUDA 12 and earlier.
 #include <thrust/system/cuda/experimental/pinned_allocator.h>
 template <typename T>
 using pinned_host_vector = thrust::host_vector<T, thrust::cuda::experimental::pinned_allocator<T>>;
+#endif
 #else
 template <typename T>
 using pinned_host_vector = thrust::host_vector<T>;

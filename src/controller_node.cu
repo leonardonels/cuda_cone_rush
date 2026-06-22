@@ -4,6 +4,10 @@
 #include <memory>
 #include <cstdint>
 
+/**
+ * TODO:
+ * [ ] remove the first host copy from ros -> host -> device to ros -> device 
+ */
 ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 {
     this->loadParameters();
@@ -483,11 +487,11 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         d_input.swap(d_output);
 
         if (this->publishFilteredPc) {
-            cudaMemcpyAsync(h_input.data(),
+            cudaMemcpyAsync(thrust::raw_pointer_cast(h_input.data()),
                 thrust::raw_pointer_cast(d_input.data()),
                 size * 4 * sizeof(float), cudaMemcpyDeviceToHost, copy_stream);
             cudaStreamSynchronize(copy_stream);
-            this->publishPc(h_input.data(), size, filtered_cp_pub);
+            this->publishPc(thrust::raw_pointer_cast(h_input.data()), size, filtered_cp_pub);
         }
     }
 
@@ -505,11 +509,11 @@ void ControllerNode::runPipeline(unsigned int inputSize)
         d_input.swap(d_output);
 
         if (this->publishSegmentedPc && size != 0) {
-            cudaMemcpyAsync(h_input.data(),
+            cudaMemcpyAsync(thrust::raw_pointer_cast(h_input.data()),
                 thrust::raw_pointer_cast(d_input.data()),
                 size * 4 * sizeof(float), cudaMemcpyDeviceToHost, copy_stream);
             cudaStreamSynchronize(copy_stream);
-            publishPc(h_input.data(), size, segmented_cp_pub);
+            publishPc(thrust::raw_pointer_cast(h_input.data()), size, segmented_cp_pub);
         }
     }
 

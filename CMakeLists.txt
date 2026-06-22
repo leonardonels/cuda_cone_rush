@@ -105,14 +105,14 @@ if(ENABLE_ZERO_COPY)
       "-- ZERO COPY is ENABLED\n"
       "============================================================\n"
     )
-  else()
-    message(
-      "============================================================\n"
-      "-- ZERO COPY is DISABLED - PLEASE SET ENV RMW_FASTRTPS_USE_QOS_FROM_XML=1 BEFORE BUILDING TO USE ZERO COPY\n"
-      "============================================================\n"
-    )
+    add_definitions(-DENABLE_ZERO_COPY)
   endif()
-  add_definitions(-DENABLE_ZERO_COPY)
+else()
+  message(
+    "============================================================\n"
+    "-- ZERO COPY is DISABLED - PLEASE SET ENV RMW_FASTRTPS_USE_QOS_FROM_XML=1 BEFORE BUILDING TO USE ZERO COPY\n"
+    "============================================================\n"
+  )
 endif()
 
 #set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-12.8")
@@ -144,6 +144,14 @@ include_directories(include ${catkin_INCLUDE_DIRS})
 include_directories(${PCL_INCLUDE_DIRS})
 include_directories(${Eigen_INCLUDE_DIRS})
 include_directories(${CUDA_INCLUDE_DIRS})
+# CUDA 13+ relocates CCCL (thrust/cub) under include/cccl. nvcc adds this path
+# automatically, but host (.cpp) translation units that transitively include
+# thrust headers need it explicitly. Harmless on CUDA <=12 where it doesn't exist.
+foreach(_cuda_inc ${CUDA_INCLUDE_DIRS})
+  if(EXISTS "${_cuda_inc}/cccl")
+    include_directories("${_cuda_inc}/cccl")
+  endif()
+endforeach()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 add_definitions(-std=c++17 -g -lboost_thread-mt)
 

@@ -24,8 +24,8 @@
     segment: true
     clustering: true
     
-    publishFilteredPc: true
-    publishSegmentedPc: true
+    publishFilteredPc: false
+    publishSegmentedPc: false
     publishCluster: true
 
     # ================ Debug options =================

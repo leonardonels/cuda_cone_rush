@@ -12,7 +12,7 @@
     zero_copy_enabled: false
 
     # ================ BARQ options =================
-    BARQ_enabled: false      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
+    BARQ_enabled: true      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
     BARQ_topic: /lidar_points
     BARQ_retry_delay_ms: 100
     BARQ_max_retries: 20

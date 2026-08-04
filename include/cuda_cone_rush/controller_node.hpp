@@ -154,8 +154,15 @@ private:
         void onTimer();
         #endif
 
-        /* where the magic happens */
-        void runPipeline(unsigned int inputSize);
+        /* where the magic happens.
+           `capture_stamp` is when the SOURCE cloud was acquired, carried through
+           so the published cones carry it instead of the time the pipeline
+           happened to finish. Downstream (the EKF in cuda_cone_fused) uses the
+           stamp to line each observation up against the pose the car actually
+           had when it was taken; stamping at publish time instead folds the
+           whole clustering latency into the measurement, which shows up as a
+           map offset along the direction of travel that grows with speed. */
+        void runPipeline(unsigned int inputSize, const rclcpp::Time& capture_stamp);
 
         /* Publish PointCloud */
         void publishPc(float *points, unsigned int size, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub);

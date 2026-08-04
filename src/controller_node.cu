@@ -350,7 +350,7 @@ void ControllerNode::standardPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr
 
     inputSize = converter_->convert(sub_cloud, d_input);
 
-    runPipeline(inputSize);
+    runPipeline(inputSize, rclcpp::Time(sub_cloud->header.stamp));
 }
 
 #ifdef ENABLE_ZERO_COPY
@@ -373,7 +373,9 @@ void ControllerNode::boundedPointcloud(mmr_base::msg::BoundedPointcloud::SharedP
                                     std::uint32_t(26)*sub_cloud->width, std::uint32_t(26),
                                     d_input);
 
-    runPipeline(inputSize);
+    /* BoundedPointcloud has no header; its `stamp` field IS the sensor
+       frame-start time (see the msg definition). */
+    runPipeline(inputSize, rclcpp::Time(sub_cloud->stamp));
 }
 #endif
 
@@ -455,11 +457,14 @@ void ControllerNode::onTimer()
     inputSize = converter_->convert(points, static_cast<size_t>(width) * point_step,
                                     width, 1, width * point_step, point_step, d_input);
 
-    runPipeline(inputSize);
+    /* BARQ frame header carries the frame START time in seconds (see the layout
+       comment above) — that is the acquisition time, not the writer's publish
+       time, so it is the right stamp to propagate. */
+    runPipeline(inputSize, rclcpp::Time(static_cast<int64_t>(timestamp * 1e9), RCL_ROS_TIME));
 }
 #endif
 
-void ControllerNode::runPipeline(unsigned int inputSize)
+void ControllerNode::runPipeline(unsigned int inputSize, const rclcpp::Time& capture_stamp)
 {
 #if defined(ENABLE_VERBOSE)
     auto t_start = std::chrono::steady_clock::now();
@@ -537,7 +542,10 @@ void ControllerNode::runPipeline(unsigned int inputSize)
             std::cout << "Warning: exceeded " << this->limitWarning_ms << " ms!\n" << std::endl;
 #endif
         if (this->publishCluster) {
-            cones->header.stamp = this->now();
+            /* Stamp with the SOURCE cloud's acquisition time, not now(): the
+               cones describe the world as it was when the scan was taken, and
+               downstream needs that to fuse them against the matching pose. */
+            cones->header.stamp = capture_stamp;
             cones_array_pub->publish(*cones);
         }
 

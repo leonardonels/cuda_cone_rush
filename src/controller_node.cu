@@ -29,6 +29,8 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
 
         /* Create BARQ subscriber */
         this->BARQReaderInit();
+    }else {
+        this->ROSListenerInit();
     }
 #else
     this->ROSListenerInit();

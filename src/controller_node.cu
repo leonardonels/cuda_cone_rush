@@ -42,6 +42,16 @@ ControllerNode::ControllerNode() : Node("cuda_cone_rush_node")
         this->filtered_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->filtered_topic, 100);
     if(this->segmentFlag && this->publishSegmentedPc)
         this->segmented_cp_pub = this->create_publisher<sensor_msgs::msg::PointCloud2>(this->segmented_topic, 100);
+
+#ifdef LATENCY_TESTING
+    /* Reliable and deep, for the same reason the driver's frame tick is: this is
+       a ~28 byte message and a dropped one is a measurement that can never be
+       taken, which would show up as a missing sample rather than as an error. */
+    this->latency_sample_pub_ = this->create_publisher<mmr_base::msg::LatencySample>(
+        "/latency/sample/cone_rush", rclcpp::QoS(rclcpp::KeepLast(100)).reliable());
+    RCLCPP_INFO(this->get_logger(),
+        "LATENCY_TESTING: per-frame samples on /latency/sample/cone_rush");
+#endif
                                                                                
     /* Cuda streams init*/
     cudaStreamCreate(&copy_stream);
@@ -54,9 +64,27 @@ ControllerNode::~ControllerNode()
     if (compute_stream) cudaStreamDestroy(compute_stream);
 }
 
+void ControllerNode::transformConesToOutputFrame()
+{
+    /* No-op when the extrinsics were unavailable: cone_frame_id_ is then the
+       lidar frame and the points are already correct in it. */
+    if (!this->have_extrinsics_) return;
+
+    for (auto & p : this->cones->points) {
+        const double x = p.x, y = p.y, z = p.z;
+        /* R is lidar2baselink as written in rows -- it maps a vector in the
+           lidar frame into base_link, which is precisely this direction. See
+           the note in vehicle_extrinsics.yaml before "fixing" the indexing:
+           transposing does not cancel the mounting tilt, it doubles it. */
+        p.x = lidar_R_[0] * x + lidar_R_[1] * y + lidar_R_[2] * z + lidar_t_[0];
+        p.y = lidar_R_[3] * x + lidar_R_[4] * y + lidar_R_[5] * z + lidar_t_[1];
+        p.z = lidar_R_[6] * x + lidar_R_[7] * y + lidar_R_[8] * z + lidar_t_[2];
+    }
+}
+
 void ControllerNode::MessageInit()
 {
-    cones->header.frame_id = this->frame_id;
+    cones->header.frame_id = this->cone_frame_id_;
     cones->ns = "ListaConiRilevati";
     cones->type = visualization_msgs::msg::Marker::SPHERE_LIST;
     cones->action = visualization_msgs::msg::Marker::ADD;
@@ -110,7 +138,14 @@ void ControllerNode::BARQReaderInit()
             std::this_thread::sleep_for(std::chrono::milliseconds(this->barq_retry_delay_ms_));
             this->barq_retries_++;
         } else {
-            this->timer_ = create_wall_timer(std::chrono::milliseconds(this->barq_polling_rate_ms_), std::bind(&ControllerNode::onTimer, this));
+            /* duration<double, milli>, NOT std::chrono::milliseconds: the latter
+               has an integral rep (int64_t), so its converting constructor is
+               disabled for a floating-point argument and sub-millisecond periods
+               are not merely truncated, they do not compile. create_wall_timer
+               takes any duration and converts to nanoseconds internally. */
+            this->timer_ = create_wall_timer(
+                std::chrono::duration<double, std::milli>(this->barq_polling_rate_ms_),
+                std::bind(&ControllerNode::onTimer, this));
             RCLCPP_INFO(rclcpp::get_logger("cuda_cone_rush_node"), "BARQ reader initialized successfully.");
             
             this->writer_health_check_timer_ = create_wall_timer(std::chrono::milliseconds(this->barq_writer_timeout_ms_), std::bind(&ControllerNode::checkForWriterHealth, this));
@@ -137,7 +172,13 @@ void ControllerNode::loadParameters()
     declare_parameter("segmented_topic", "/segmented_points");
     declare_parameter("filtered_topic", "/filtered_points");
     declare_parameter("cluster_topic", "/clusters");
-    declare_parameter("frame_id", "hesai_lidar");
+    declare_parameter("frame_id", "lidar_link");
+    declare_parameter("output_frame_id", "base_link");
+    /* From the shared vehicle_extrinsics.yaml (wildcard node key), the same
+       block fast_limo and vehicle_tf_node read -- docs/FRAMES.md rule 5. Empty
+       default so a missing file is detectable rather than silently identity. */
+    declare_parameter<std::vector<double>>("extrinsics.lidar.t", std::vector<double>{});
+    declare_parameter<std::vector<double>>("extrinsics.lidar.R", std::vector<double>{});
 
     // ================ Zero Copy options =================
     declare_parameter("zero_copy_enabled", true);
@@ -148,7 +189,13 @@ void ControllerNode::loadParameters()
     declare_parameter("BARQ_topic", "/lidar_points");
     declare_parameter("BARQ_retry_delay_ms", 10);
     declare_parameter("BARQ_max_retries", 5);
-    declare_parameter("BARQ_polling_rate_ms", 1);  // 1 ms corresponds to ~1KHz
+    /* Declared as a DOUBLE (note the 1.0). Declared as an int, rcl rejects a
+       fractional override outright -- "BARQ_polling_rate_ms: 0.1" then aborts
+       the node at startup, which as a forked child of as_demo is silent: the
+       node is simply absent. The corollary is that every params file must now
+       write a float literal; a bare `1` is an integer override against a double
+       parameter and is rejected just as hard. */
+    declare_parameter("BARQ_polling_rate_ms", 1.0);  // [ms]; 1.0 -> ~1 kHz, 0.1 -> ~10 kHz
     declare_parameter("BARQ_writer_timeout_ms", 1000);
 #endif
     
@@ -206,6 +253,31 @@ void ControllerNode::loadParameters()
     get_parameter("filtered_topic", this->filtered_topic);
     get_parameter("cluster_topic", this->cluster_topic);
     get_parameter("frame_id", this->frame_id);
+    get_parameter("output_frame_id", this->output_frame_id);
+
+    {
+        const auto t = get_parameter("extrinsics.lidar.t").as_double_array();
+        const auto R = get_parameter("extrinsics.lidar.R").as_double_array();
+        this->have_extrinsics_ = (t.size() == 3 && R.size() == 9);
+        if (this->have_extrinsics_) {
+            for (int i = 0; i < 3; ++i) this->lidar_t_[i] = t[i];
+            for (int i = 0; i < 9; ++i) this->lidar_R_[i] = R[i];
+            this->cone_frame_id_ = this->output_frame_id;
+            RCLCPP_INFO(this->get_logger(),
+                        "publishing %s in '%s' (transformed from '%s')",
+                        this->cluster_topic.c_str(), this->cone_frame_id_.c_str(),
+                        this->frame_id.c_str());
+        } else {
+            /* Publish in the frame the data is actually in. Labelling untransformed
+               lidar-frame cones as base_link would be exactly the silent lie
+               rule 8 exists to prevent. */
+            this->cone_frame_id_ = this->frame_id;
+            RCLCPP_WARN(this->get_logger(),
+                        "extrinsics.lidar.{t,R} missing -- is vehicle_extrinsics.yaml "
+                        "passed to this node? Publishing %s in '%s' untransformed.",
+                        this->cluster_topic.c_str(), this->cone_frame_id_.c_str());
+        }
+    }
 
     // ================ Zero Copy options =================
     get_parameter("zero_copy_enabled", this->zero_copy_enabled);
@@ -339,10 +411,24 @@ void ControllerNode::reserveAndResize(size_t totalElements)
 void ControllerNode::standardPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr sub_cloud)
 {
 #ifdef LATENCY_TESTING
-    auto now = rclcpp::Clock(RCL_ROS_TIME).now();
-    auto timestamp = sub_cloud->header.stamp;
-    auto latency = (now - timestamp).nanoseconds() / 1e6;
-    std::cout << "ROS2 latency: " << latency << " ms" << std::endl;
+    /* FIRST statement of the callback: after the middleware has delivered and
+       deserialised, which is where it belongs. Deserialisation is a cost plain
+       ROS pays and zero copy does not, so it has to fall INSIDE the delivery
+       interval being compared, not outside it. */
+    latency_t_in_ = monotonicNs();
+#endif
+#ifdef ENABLE_VERBOSE
+    /* Capture-to-receive, NOT transport latency: it includes the driver's whole
+       decode. It used to live under LATENCY_TESTING, where it printed a line per
+       frame from the hot callback -- blocking stdout I/O inside the very
+       interval being measured, and more expensive than everything the sampling
+       above costs. Kept here for bench debugging; never enable it for a run
+       whose numbers you will quote. */
+    {
+        const auto now = rclcpp::Clock(RCL_ROS_TIME).now();
+        const auto latency = (now - rclcpp::Time(sub_cloud->header.stamp)).nanoseconds() / 1e6;
+        std::cout << "ROS2 capture-to-receive: " << latency << " ms" << std::endl;
+    }
 #endif
 
     unsigned int inputSize = sub_cloud->width * sub_cloud->height;
@@ -359,10 +445,18 @@ void ControllerNode::standardPointcloud(sensor_msgs::msg::PointCloud2::SharedPtr
 void ControllerNode::boundedPointcloud(mmr_base::msg::BoundedPointcloud::SharedPtr sub_cloud)
 {
 #ifdef LATENCY_TESTING
-    auto now = rclcpp::Clock(RCL_ROS_TIME).now();
-    auto timestamp = sub_cloud->header.stamp;
-    auto latency = (now - timestamp).nanoseconds() / 1e6;
-    std::cout << "ROS2 latency: " << latency << " ms" << std::endl;
+    // See standardPointcloud: first statement, deliberately after deserialisation.
+    latency_t_in_ = monotonicNs();
+#endif
+#ifdef ENABLE_VERBOSE
+    /* NOTE: BoundedPointcloud has no header -- the old block here read
+       sub_cloud->header.stamp, which only compiled because it never did. The
+       frame time is the `stamp` field. */
+    {
+        const auto now = rclcpp::Clock(RCL_ROS_TIME).now();
+        const auto latency = (now - rclcpp::Time(sub_cloud->stamp)).nanoseconds() / 1e6;
+        std::cout << "zero-copy capture-to-receive: " << latency << " ms" << std::endl;
+    }
 #endif
 
     unsigned int inputSize = sub_cloud->width;
@@ -370,7 +464,16 @@ void ControllerNode::boundedPointcloud(mmr_base::msg::BoundedPointcloud::SharedP
 
     reserveAndResize(totalElements);
 
-    inputSize = converter_->convert(sub_cloud->data.data(), sub_cloud->data.size(),
+    /* The length is width*26, NOT data.size(). BoundedPointcloud::data is a
+       fixed std::array<uint8_t, 3407872> -- data.size() is that constant no
+       matter how full the frame is -- and convert() memcpys exactly in_bytes to
+       the device. At the ~64.7k points these clouds actually carry that copied
+       3.41 MB per frame where 1.68 MB was live: 2.03x the bytes, ~35 MB/s of
+       waste at 20 Hz, charged to this node and to the zero-copy path only. The
+       PointCloud2 overload is unaffected because there data.size() == row_step *
+       height, i.e. already exact. */
+    const std::size_t live_bytes = std::size_t(26) * sub_cloud->width;
+    inputSize = converter_->convert(sub_cloud->data.data(), live_bytes,
                                     sub_cloud->width, std::uint32_t(1),
                                     std::uint32_t(26)*sub_cloud->width, std::uint32_t(26),
                                     d_input);
@@ -423,12 +526,21 @@ void ControllerNode::onTimer()
         return;
     }
 
-    // latency depends on polling frequency
 #ifdef LATENCY_TESTING
-    const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    const double barq_ms = static_cast<double>(now_ns - ts) / 1e6;
-    std::cout << "BARQ latency: " << barq_ms << " ms" << std::endl;
+    /* The BARQ arm's t_in is the POLL THAT FOUND THE DATA, not the instant the
+       data arrived -- there is no callback here to be woken. So its delivery
+       figure carries up to BARQ_polling_rate_ms of poll (1 ms as shipped,
+       ~0.5 ms on average) that is not transport. Say so wherever it is plotted;
+       it is the one arm whose number is not purely the transport's. */
+    latency_t_in_ = monotonicNs();
+#endif
+#ifdef ENABLE_VERBOSE
+    {
+        const int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        std::cout << "BARQ capture-to-receive: "
+                  << static_cast<double>(now_ns - ts) / 1e6 << " ms" << std::endl;
+    }
 #endif
 
     const uint8_t* buf = static_cast<const uint8_t*>(ptr);
@@ -463,6 +575,32 @@ void ControllerNode::onTimer()
        comment above) — that is the acquisition time, not the writer's publish
        time, so it is the right stamp to propagate. */
     runPipeline(inputSize, rclcpp::Time(static_cast<int64_t>(timestamp * 1e9), RCL_ROS_TIME));
+}
+#endif
+
+#ifdef LATENCY_TESTING
+/*
+ * One sample per frame: which frame, when this node got it, when it was ready to
+ * publish. Nothing derived, nothing averaged -- as_demo's monitor owns every
+ * statistic, so this stays a fixed-size fill and a publish with no allocation
+ * and no branching on the data.
+ *
+ * `frame_stamp` is the LiDAR capture stamp, which is the same value under all
+ * three transports (PointCloud2::header.stamp, BoundedPointcloud::stamp, and the
+ * BARQ frame header's timestamp all carry it), so a sample joins against the
+ * driver's tick and against the downstream nodes' samples with no per-transport
+ * special casing.
+ */
+void ControllerNode::publishLatencySample(const rclcpp::Time& frame_stamp, int64_t t_out)
+{
+    if (!latency_sample_pub_) return;
+
+    mmr_base::msg::LatencySample m;
+    m.frame_stamp = frame_stamp;
+    m.t_in = latency_t_in_;
+    m.t_out = t_out;
+    m.seq = latency_seq_++;
+    latency_sample_pub_->publish(m);
 }
 #endif
 
@@ -544,11 +682,20 @@ void ControllerNode::runPipeline(unsigned int inputSize, const rclcpp::Time& cap
             std::cout << "Warning: exceeded " << this->limitWarning_ms << " ms!\n" << std::endl;
 #endif
         if (this->publishCluster) {
+            /* Clustering produced these in the lidar frame; move them into the
+               published frame before anyone sees them. */
+            this->transformConesToOutputFrame();
             /* Stamp with the SOURCE cloud's acquisition time, not now(): the
                cones describe the world as it was when the scan was taken, and
                downstream needs that to fuse them against the matching pose. */
             cones->header.stamp = capture_stamp;
+#ifdef LATENCY_TESTING
+            const int64_t latency_t_out = monotonicNs();
+#endif
             cones_array_pub->publish(*cones);
+#ifdef LATENCY_TESTING
+            publishLatencySample(capture_stamp, latency_t_out);
+#endif
         }
 
 #ifdef NSIGHT_SDK

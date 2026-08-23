@@ -21,7 +21,7 @@ endif()
 option(ENABLE_BARQ "Enable BARQ for high-performance packet processing" OFF)
 option(ENABLE_ZERO_COPY "Enable Zero Copy for ROS2 low latency comunication" OFF)
 option(ENABLE_VERBOSE "Print essential timings information for each callback" OFF)
-option(LATENCY_TESTING "Print latency information for each BARQ callback" OFF)
+option(LATENCY_TESTING "Publish per-frame latency samples on /latency/sample/<key>" OFF)
 option(NSIGHT_SDK "Set an execution limit for NVIDIA Nsight Systems profiling" OFF)
 
 # Pinned memory: auto-detect architecture and set the default accordingly.
@@ -45,8 +45,26 @@ else()
   message(STATUS "Verbose timing information: DISABLED")
 endif()
 
+# Env-var driven, like ENABLE_ZERO_COPY and ENABLE_BARQ, and for the same
+# reason: LATENCY_TESTING now needs mmr_base (for LatencySample), so it is a
+# flag that changes this package's dependencies and has to be settable once for
+# a whole `LATENCY_TESTING=1 colcon build` rather than per package.
+if($ENV{LATENCY_TESTING})
+  set(LATENCY_TESTING ON)
+endif()
+
 if(LATENCY_TESTING)
-  message(STATUS "Latency testing: ENABLED")
+  # mmr_base carries LatencySample. It is found under ENABLE_ZERO_COPY below too,
+  # for BoundedPointcloud, but the two flags are independent and this one must
+  # not depend on that one having been set: find it here as well, and fail loudly
+  # rather than quietly compiling the instrumentation out -- a silently
+  # unmeasured run looks exactly like a measured one.
+  find_package(mmr_base QUIET)
+  if(NOT mmr_base_FOUND)
+    message(FATAL_ERROR
+      "LATENCY_TESTING requires mmr_base (for msg/LatencySample) and it was not found")
+  endif()
+  message(STATUS "Latency testing: ENABLED -- per-frame samples on /latency/sample/cone_rush")
   add_definitions(-DLATENCY_TESTING)
 else()
   message(STATUS "Latency testing: DISABLED")

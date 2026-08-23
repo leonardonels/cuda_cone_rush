@@ -10,6 +10,11 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend condition="$ENABLE_BARQ == 1">barq</build_depend>
   <build_depend condition="$RMW_FASTRTPS_USE_QOS_FROM_XML == 1">mmr_base</build_depend>
+  <!-- Same package, different reason: LATENCY_TESTING publishes
+       mmr_base/LatencySample. Declared separately so that turning either flag on
+       alone still pulls mmr_base in. -->
+  <build_depend condition="$LATENCY_TESTING == 1">mmr_base</build_depend>
+  <exec_depend condition="$LATENCY_TESTING == 1">mmr_base</exec_depend>
 
 
   <test_depend>ament_lint_auto</test_depend>

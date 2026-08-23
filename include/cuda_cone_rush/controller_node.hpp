@@ -55,11 +55,28 @@ using pinned_host_vector = thrust::host_vector<T>;
 #include <mmr_base/msg/bounded_pointcloud.hpp>
 #endif
 
+#ifdef LATENCY_TESTING
+#include <chrono>
+#include <mmr_base/msg/latency_sample.hpp>
+#endif
+
 class ControllerNode : public rclcpp::Node
 {
 private:
         std::shared_ptr<visualization_msgs::msg::Marker> cones{new visualization_msgs::msg::Marker()};
         std::string input_topic, segmented_topic, filtered_topic, cluster_topic, frame_id;
+
+        std::string output_frame_id;
+        std::string cone_frame_id_;      ///< resolved: output_frame_id, or frame_id if no extrinsics
+        bool have_extrinsics_ = false;
+        /* lidar2baselink, row-major as written in vehicle_extrinsics.yaml. Plain
+           arrays rather than Eigen: this is one 3x3 per scan on a handful of
+           points, and the package does not otherwise link Eigen. */
+        double lidar_R_[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+        double lidar_t_[3] = {0, 0, 0};
+
+        /// Rotate+translate the cone centroids from the lidar frame into cone_frame_id_.
+        void transformConesToOutputFrame();
         bool filterFlag, clusteringFlag, segmentFlag, publishFilteredPc, publishSegmentedPc, publishCluster;
         float downFilterLimitX, upFilterLimitX;
         float downFilterLimitY, upFilterLimitY;
@@ -87,7 +104,7 @@ private:
         size_t barq_retry_delay_ms_ = 100;
         int barq_max_retries_ = 5;
         int barq_retries_ = 0;
-        int barq_polling_rate_ms_ = 16;  // default to ~60Hz
+        double barq_polling_rate_ms_ = 16;  // default to ~60Hz
         int barq_writer_timeout_ms_ = 1000; // timeout for writer health check
         int64_t last_barq_timestamp_ns_ = 0;
         bool barq_initialized_ = false;
@@ -121,6 +138,28 @@ private:
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr cones_array_pub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_cp_pub;
         rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr segmented_cp_pub;
+
+        #ifdef LATENCY_TESTING
+        /* Per-frame latency instrumentation. Compiled out entirely otherwise:
+           no publisher, no members, no cost. */
+        rclcpp::Publisher<mmr_base::msg::LatencySample>::SharedPtr latency_sample_pub_;
+        uint32_t latency_seq_ = 0;
+        /* Set at the top of whichever entry point received the frame, read again
+           in runPipeline. One variable and not a parameter because the three
+           entry points are mutually exclusive at runtime -- the transport is
+           chosen at construction -- and the pipeline is synchronous, so there is
+           never a second frame in flight to confuse it with. */
+        int64_t latency_t_in_ = 0;
+
+        /* CLOCK_MONOTONIC, matching the units of the driver's frame tick. */
+        static int64_t monotonicNs()
+        {
+            return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+        }
+
+        void publishLatencySample(const rclcpp::Time& frame_stamp, int64_t t_out);
+        #endif
 
         /* Load parameters function */
         void loadParameters();

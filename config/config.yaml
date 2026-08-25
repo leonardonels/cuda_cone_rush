@@ -12,7 +12,7 @@
     zero_copy_enabled: false
 
     # ================ BARQ options =================
-    BARQ_enabled: true      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
+    BARQ_enabled: false      # Switch to BARQ to receive data (false to disable BARQ and use ROS2 as normal)
     BARQ_topic: /lidar_points
     BARQ_retry_delay_ms: 100
     BARQ_max_retries: 20
@@ -35,10 +35,10 @@
     nsight_max_iterations: 20
     
     # ================ Filtering XYZ options =================
-    downFilterLimitX: -35.0
-    upFilterLimitX: 35.0
-    downFilterLimitY: -35.0
-    upFilterLimitY: 35.0
+    downFilterLimitX: -60.0
+    upFilterLimitX: 60.0
+    downFilterLimitY: -50.0
+    upFilterLimitY: 50.0
     downFilterLimitZ: -5.0
     upFilterLimitZ: 5.0
 

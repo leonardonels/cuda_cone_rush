@@ -706,4 +706,10 @@ void ControllerNode::runPipeline(unsigned int inputSize, const rclcpp::Time& cap
         }
 #endif
     }
+#ifdef LATENCY_TESTING
+    else{
+            const int64_t latency_t_out = monotonicNs();
+            publishLatencySample(capture_stamp, latency_t_out);
+    }
+#endif
 }
